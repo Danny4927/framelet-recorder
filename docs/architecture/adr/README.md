@@ -10,5 +10,6 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0004](ADR-0004-media-pipeline-selection-deferred.md) | Defer media pipeline selection | Accepted (defer) |
 | [ADR-0005](ADR-0005-capture-media-contracts.md) | Owned media blocks and clock contracts | Accepted for PoC |
 | [ADR-0006](ADR-0006-wayland-portal-poc.md) | Wayland portal PoC using lamco-wayland | Evaluation only |
+| [ADR-0007](ADR-0007-lamco-pipewire-frame-delivery.md) | Do not use the lamco-pipewire 0.8.4 manager frame receiver | Accepted for PoC |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.
