@@ -1,6 +1,6 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.1 — initial architecture baseline  
+**Version:** 0.2 — capture/media contracts and initial Wayland PoC  
 **Date:** 3 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
@@ -74,6 +74,8 @@ No telemetry, update checks, upload, remote control, or cloud processing is in s
 9. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
 
 ## 5. Building Block View
+
+The detailed backend-neutral media boundary is specified in [Capture and media contracts](capture-and-media-contracts.md). It defines source identity/capabilities, owned video/audio blocks, validation, clock mapping, events/errors, bounded transport, and cancellation.
 
 ### 5.1 Application overview
 
@@ -221,6 +223,8 @@ See [ADR index](adr/README.md).
 | ADR-0002 | Core-owned recording lifecycle | Accepted |
 | ADR-0003 | Safe Rust and platform adapters | Accepted |
 | ADR-0004 | Defer media runtime selection until PoC | Accepted (defer) |
+| ADR-0005 | Owned media blocks and explicit clock contracts | Accepted for PoC |
+| ADR-0006 | Start Wayland portal PoC with lamco-wayland | Accepted for evaluation only |
 
 ## 10. Quality Requirements
 
