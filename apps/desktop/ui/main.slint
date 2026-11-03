@@ -1,0 +1,80 @@
+import { Button, CheckBox, ComboBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Framelet";
+    width: 760px;
+    height: 560px;
+    background: #10141c;
+    in-out property <string> selected-mode: "Screen";
+    in-out property <string> status-message: "Bereit für deine Aufnahme";
+    callback start-recording();
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 18px;
+        HorizontalLayout {
+            spacing: 10px;
+            Text { text: "framelet"; color: #f5f7fb; font-size: 27px; font-weight: 700; }
+            Text { text: "CAPTURE. SAVE. DONE."; color: #8491a5; font-size: 10px; vertical-alignment: center; }
+        }
+        Text { text: "Was möchtest du aufnehmen?"; color: #f5f7fb; font-size: 22px; font-weight: 600; }
+        GridLayout {
+            columns: 2;
+            spacing: 12px;
+            for mode in [
+                { name: "Bildschirm", value: "Screen", symbol: "▣" },
+                { name: "Mikrofon", value: "Microphone", symbol: "◖" },
+                { name: "Webcam", value: "Webcam", symbol: "▤" },
+                { name: "Bildschirm + Webcam", value: "ScreenAndWebcam", symbol: "▣+" }
+            ]: Rectangle {
+                height: 82px;
+                background: root.selected-mode == mode.value ? #263b58 : #1a2230;
+                border-width: root.selected-mode == mode.value ? 2px : 1px;
+                border-color: root.selected-mode == mode.value ? #6aa8ff : #2b3545;
+                border-radius: 12px;
+                TouchArea { clicked => { root.selected-mode = mode.value; } }
+                HorizontalLayout {
+                    padding: 14px;
+                    spacing: 12px;
+                    Text { text: mode.symbol; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                    Text { text: mode.name; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                }
+            }
+        }
+        Rectangle {
+            background: #1a2230;
+            border-radius: 12px;
+            padding: 16px;
+            height: 112px;
+            VerticalLayout {
+                spacing: 10px;
+                Text { text: "AUDIO"; color: #8491a5; font-size: 10px; font-weight: 700; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    CheckBox { text: "Mikrofon aufnehmen"; checked: true; }
+                    ComboBox { model: ["Standardmikrofon auswählen", "Systemstandard"]; current-index: 0; }
+                }
+                Text { text: "Aufnahmen bleiben lokal auf diesem Gerät."; color: #8491a5; font-size: 11px; }
+            }
+        }
+        Rectangle {
+            background: #1a2230;
+            border-radius: 12px;
+            padding: 14px;
+            height: 48px;
+            HorizontalLayout {
+                spacing: 8px;
+                Text { text: "●"; color: #69d69a; vertical-alignment: center; }
+                Text { text: root.status-message; color: #c4cedd; vertical-alignment: center; }
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            Button {
+                text: "Aufnahme vorbereiten";
+                primary: true;
+                clicked => { root.start-recording(); }
+            }
+        }
+    }
+}
