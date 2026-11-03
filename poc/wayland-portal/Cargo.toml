@@ -1,0 +1,12 @@
+[package]
+name = "framelet-wayland-portal-poc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+
+[workspace]
+
+[dependencies]
+lamco-wayland = { version = "=0.8.4", default-features = false, features = ["portal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
