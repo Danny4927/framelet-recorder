@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use slint::ComponentHandle;
 use slint_snapshot::{
     SnapshotRuntime,
