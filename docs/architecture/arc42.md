@@ -118,7 +118,7 @@ The desktop executable is the composition root. Core depends on contracts, not S
 | Area | Status |
 |---|---|
 | Slint shell | Present; scaffold only |
-| capture-api | Minimal safe lifecycle traits and source metadata; streaming contract incomplete |
+| capture-api | Safe source descriptors, validated packed BGRA/RGBA video frames, and interleaved audio blocks implemented; streaming transport remains open |
 | core | Mode enum and transition predicate; orchestration incomplete |
 | Native capture | Not implemented |
 | Media pipeline/compositing/encoding | Not implemented |
