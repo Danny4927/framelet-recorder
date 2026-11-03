@@ -14,7 +14,7 @@ MVP modes:
 
 No cloud, upload, network service, accounts, system audio, AI, editing, collaboration, or macOS support.
 
-Read `SPECIFICATION.md` and `SECURITY.md` before implementing features.
+Read `SPECIFICATION.md`, `SECURITY.md`, and `docs/architecture/README.md` before implementing features. Keep `docs/architecture/arc42.md` and relevant ADRs aligned with structural changes. Record significant technology choices as ADRs; do not treat PoC candidates as approved dependencies.
 
 ## Mandatory Rust safety
 
