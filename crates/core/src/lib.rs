@@ -38,25 +38,51 @@ pub enum RecordingState {
 /// Returns whether a lifecycle transition is permitted.
 #[must_use]
 pub fn can_transition(from: RecordingState, to: RecordingState) -> bool {
-    use RecordingState::{Completed, Failed, Finalizing, Idle, Paused, Preparing, Ready, Recording};
-    matches!((from, to),
-        (Idle, Preparing) | (Preparing, Ready) | (Preparing, Idle) | (Preparing, Failed)
-        | (Ready, Recording) | (Ready, Idle) | (Recording, Paused)
-        | (Recording, Finalizing) | (Recording, Failed) | (Paused, Recording)
-        | (Paused, Finalizing) | (Paused, Failed) | (Finalizing, Completed)
-        | (Finalizing, Failed) | (Completed, Idle) | (Failed, Idle))
+    use RecordingState::{
+        Completed, Failed, Finalizing, Idle, Paused, Preparing, Ready, Recording,
+    };
+    matches!(
+        (from, to),
+        (Idle, Preparing)
+            | (Preparing, Ready)
+            | (Preparing, Idle)
+            | (Preparing, Failed)
+            | (Ready, Recording)
+            | (Ready, Idle)
+            | (Recording, Paused)
+            | (Recording, Finalizing)
+            | (Recording, Failed)
+            | (Paused, Recording)
+            | (Paused, Finalizing)
+            | (Paused, Failed)
+            | (Finalizing, Completed)
+            | (Finalizing, Failed)
+            | (Completed, Idle)
+            | (Failed, Idle)
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn recording_can_pause_and_resume() {
-        assert!(can_transition(RecordingState::Recording, RecordingState::Paused));
-        assert!(can_transition(RecordingState::Paused, RecordingState::Recording));
+        assert!(can_transition(
+            RecordingState::Recording,
+            RecordingState::Paused
+        ));
+        assert!(can_transition(
+            RecordingState::Paused,
+            RecordingState::Recording
+        ));
     }
+
     #[test]
     fn idle_cannot_jump_to_completed() {
-        assert!(!can_transition(RecordingState::Idle, RecordingState::Completed));
+        assert!(!can_transition(
+            RecordingState::Idle,
+            RecordingState::Completed
+        ));
     }
 }
