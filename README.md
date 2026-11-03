@@ -20,6 +20,10 @@ Requires Rust 1.92 or newer (stable), plus native build dependencies required by
 ```bash
 cargo build --workspace
 cargo test --workspace
+
+Visual snapshots (after creating the initial baseline):
+
+FRAMELET_RUN_VISUAL_TESTS=1 cargo test -p framelet-desktop --test visual_regression
 ```
 
 See SPECIFICATION.md, SECURITY.md, AGENTS.md, docs/CAPTURE_POC.md, and docs/VISUAL_TESTING.md.
