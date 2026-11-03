@@ -3,7 +3,9 @@
 This directory is the architecture source of truth. It uses the arc42 structure and Architecture Decision Records (ADRs).
 
 - [arc42 architecture](arc42.md)
+- [Capture and media contracts](capture-and-media-contracts.md)
 - [ADR index](adr/README.md)
+- [Wayland portal PoC](../../poc/wayland-portal/README.md)
 
 **Baseline:** 3 November 2026. This is an intended architecture, not evidence that native capture or media backends are implemented. Candidate technologies remain unapproved until their PoCs and security reviews pass.
 
