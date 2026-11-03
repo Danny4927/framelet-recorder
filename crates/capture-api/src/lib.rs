@@ -149,9 +149,7 @@ impl AudioBlock {
         first_sample_position: Option<u64>,
         samples: Vec<f32>,
     ) -> Result<Self, CaptureError> {
-        if sample_rate == 0
-            || channels == 0
-            || !samples.len().is_multiple_of(usize::from(channels))
+        if sample_rate == 0 || channels == 0 || !samples.len().is_multiple_of(usize::from(channels))
         {
             return Err(CaptureError::InvalidAudioLayout);
         }
