@@ -30,7 +30,8 @@ export component MainWindow inherits Window {
                     border-radius: 12px;
                     TouchArea { clicked => { root.selected-mode = "Screen"; } }
                     HorizontalLayout {
-                                    spacing: 12px;
+                        padding: 14px;
+                        spacing: 12px;
                         Text { text: "SCR"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
                         Text { text: "Bildschirm"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
                     }
@@ -92,8 +93,27 @@ export component MainWindow inherits Window {
                 Text { text: "AUDIO"; color: #8491a5; font-size: 10px; font-weight: 700; }
                 HorizontalLayout {
                     spacing: 12px;
-                    CheckBox { text: "Mikrofon aufnehmen"; checked: true; }
-                    ComboBox { model: ["Standardmikrofon auswählen", "Systemstandard"]; current-index: 0; }
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        background: #1769c2;
+                        border-radius: 4px;
+                        Text { text: "✓"; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    Text { text: "Mikrofon aufnehmen"; color: #e1e7f0; vertical-alignment: center; }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 36px;
+                        background: #252f40;
+                        border-width: 1px;
+                        border-color: #39475b;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding: 10px;
+                            Text { text: "Standardmikrofon auswählen"; color: #d7deea; vertical-alignment: center; }
+                            Text { text: "⌄"; color: #9aa8bb; vertical-alignment: center; }
+                        }
+                    }
                 }
                 Text { text: "Aufnahmen bleiben lokal auf diesem Gerät."; color: #8491a5; font-size: 11px; }
             }
