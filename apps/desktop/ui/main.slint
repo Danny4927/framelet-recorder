@@ -30,8 +30,7 @@ export component MainWindow inherits Window {
                     border-radius: 12px;
                     TouchArea { clicked => { root.selected-mode = "Screen"; } }
                     HorizontalLayout {
-                        padding: 14px;
-                        spacing: 12px;
+                                    spacing: 12px;
                         Text { text: "SCR"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
                         Text { text: "Bildschirm"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
                     }
@@ -86,9 +85,9 @@ export component MainWindow inherits Window {
         Rectangle {
             background: #1a2230;
             border-radius: 12px;
-            padding: 16px;
             height: 112px;
             VerticalLayout {
+                padding: 16px;
                 spacing: 10px;
                 Text { text: "AUDIO"; color: #8491a5; font-size: 10px; font-weight: 700; }
                 HorizontalLayout {
@@ -105,6 +104,7 @@ export component MainWindow inherits Window {
             padding: 14px;
             height: 48px;
             HorizontalLayout {
+                padding: 14px;
                 spacing: 8px;
                 Text { text: "OK"; color: #69d69a; vertical-alignment: center; }
                 Text { text: root.status-message; color: #c4cedd; vertical-alignment: center; }
