@@ -25,16 +25,11 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - name: Generate initial visual baseline
+      - name: Verify visual regression baseline
         env:
           FRAMELET_RUN_VISUAL_TESTS: "1"
-          SLINT_SNAPSHOT_MODE: create-missing
-        run: |
-          cargo test -p framelet-desktop --test visual_regression -- --exact main_window_default_state_matches_reference
-          echo "FRAMELET_SNAPSHOT_BASELINE_BASE64_BEGIN"
-          base64 -w0 apps/desktop/tests/snapshots/main-window/default.png
-          echo
-          echo "FRAMELET_SNAPSHOT_BASELINE_BASE64_END"
+          SLINT_SNAPSHOT_MODE: verify
+        run: cargo test -p framelet-desktop --test visual_regression -- --exact main_window_default_state_matches_reference
 
   windows:
     runs-on: windows-latest
