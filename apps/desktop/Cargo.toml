@@ -1,0 +1,20 @@
+[package]
+name = "framelet-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[dependencies]
+framelet-core = { path = "../../crates/core" }
+slint = "=1.18.1"
+
+[build-dependencies]
+slint-build = "=1.18.1"
+
+[dev-dependencies]
+slint-snapshot = { version = "=0.1.2", features = ["testing"] }
+
+[lints]
+workspace = true

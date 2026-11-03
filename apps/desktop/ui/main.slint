@@ -1,0 +1,141 @@
+import { Button, CheckBox, ComboBox } from "std-widgets.slint";
+
+export component MainWindow inherits Window {
+    title: "Framelet";
+    width: 760px;
+    height: 560px;
+    background: #10141c;
+    in-out property <string> selected-mode: "Screen";
+    in-out property <string> status-message: "Bereit für deine Aufnahme";
+    callback start-recording();
+
+    VerticalLayout {
+        padding: 28px;
+        spacing: 18px;
+        HorizontalLayout {
+            spacing: 10px;
+            Text { text: "framelet"; color: #f5f7fb; font-size: 27px; font-weight: 700; }
+            Text { text: "CAPTURE. SAVE. DONE."; color: #8491a5; font-size: 10px; vertical-alignment: center; }
+        }
+        Text { text: "Was möchtest du aufnehmen?"; color: #f5f7fb; font-size: 22px; font-weight: 600; }
+        VerticalLayout {
+            spacing: 12px;
+            HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "Screen" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "Screen" ? 2px : 1px;
+                    border-color: root.selected-mode == "Screen" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "Screen"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "SCR"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Bildschirm"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "Microphone" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "Microphone" ? 2px : 1px;
+                    border-color: root.selected-mode == "Microphone" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "Microphone"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "MIC"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Mikrofon"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "Webcam" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "Webcam" ? 2px : 1px;
+                    border-color: root.selected-mode == "Webcam" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "Webcam"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "CAM"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Webcam"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "ScreenAndWebcam" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "ScreenAndWebcam" ? 2px : 1px;
+                    border-color: root.selected-mode == "ScreenAndWebcam" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "ScreenAndWebcam"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "SC+"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Bildschirm + Webcam"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+            }
+        }
+        Rectangle {
+            background: #1a2230;
+            border-radius: 12px;
+            height: 112px;
+            VerticalLayout {
+                padding: 16px;
+                spacing: 10px;
+                Text { text: "AUDIO"; color: #8491a5; font-size: 10px; font-weight: 700; }
+                HorizontalLayout {
+                    spacing: 12px;
+                    Rectangle {
+                        width: 22px;
+                        height: 22px;
+                        background: #1769c2;
+                        border-radius: 4px;
+                        Text { text: "✓"; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
+                    }
+                    Text { text: "Mikrofon aufnehmen"; color: #e1e7f0; vertical-alignment: center; }
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        height: 36px;
+                        background: #252f40;
+                        border-width: 1px;
+                        border-color: #39475b;
+                        border-radius: 6px;
+                        HorizontalLayout {
+                            padding: 10px;
+                            Text { text: "Standardmikrofon auswählen"; color: #d7deea; vertical-alignment: center; }
+                            Text { text: "⌄"; color: #9aa8bb; vertical-alignment: center; }
+                        }
+                    }
+                }
+                Text { text: "Aufnahmen bleiben lokal auf diesem Gerät."; color: #8491a5; font-size: 11px; }
+            }
+        }
+        Rectangle {
+            background: #1a2230;
+            border-radius: 12px;
+            height: 48px;
+            HorizontalLayout {
+                padding: 14px;
+                spacing: 8px;
+                Text { text: "OK"; color: #69d69a; vertical-alignment: center; }
+                Text { text: root.status-message; color: #c4cedd; vertical-alignment: center; }
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            Button {
+                text: "Aufnahme vorbereiten";
+                primary: true;
+                clicked => { root.start-recording(); }
+            }
+        }
+    }
+}

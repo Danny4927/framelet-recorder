@@ -52,3 +52,17 @@ The repository currently contains the product and engineering specification. Cap
 ## License
 
 TBD. No license is granted until a license file is added.
+
+
+## Development workspace
+
+The initial Rust workspace and Slint desktop shell are on the foundation branch. See
+docs/CAPTURE_POC.md for capture backend evaluation and docs/VISUAL_TESTING.md for screenshot
+regression testing. Real device capture is still under PoC and is not yet implemented.
+
+Requires Rust 1.92 or newer and Slint native build dependencies.
+
+```bash
+cargo build --workspace
+cargo test --workspace
+```
