@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let manager = PortalManager::with_default().await?;
-    let session = manager
+    let (session, _restore_token) = manager
         .create_session("framelet-wayland-poc".to_owned(), None)
         .await?;
 
