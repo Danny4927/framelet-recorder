@@ -272,7 +272,7 @@ fn copy_rows(
             .ok_or_else(|| "destination row is outside the frame buffer".to_owned())?;
 
         destination_row.copy_from_slice(source_row);
-        for pixel in destination_row.chunks_exact_mut(4) {
+        for pixel in destination_row.as_chunks_mut::<4>().0 {
             transform(pixel);
         }
     }
