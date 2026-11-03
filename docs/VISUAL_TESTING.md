@@ -9,21 +9,19 @@ Framelet uses headless Slint rendering through slint-snapshot, without a physica
 - Checked-in PNG reference image and pixel comparison.
 - Expected, actual, and diff artifacts when comparison fails.
 
-## First reference image
+## Checked-in reference image
 
-Generate the initial baseline from the compiled UI and review it:
+The initial 760 × 560 PNG was rendered from the compiled Slint UI and reviewed. It is stored at:
 
-```bash
-SLINT_SNAPSHOT_MODE=accept cargo test -p framelet-desktop --test visual_regression
-```
+`apps/desktop/tests/snapshots/main-window/default.png`
 
-Review the PNG under apps/desktop/tests/snapshots/ and commit it. Do not accept references
-automatically in CI.
+CI runs the visual test explicitly with `FRAMELET_RUN_VISUAL_TESTS=1` and
+`SLINT_SNAPSHOT_MODE=verify`. It never creates or accepts a new baseline automatically.
 
 ## Normal verification
 
 ```bash
-cargo test -p framelet-desktop --test visual_regression
+FRAMELET_RUN_VISUAL_TESTS=1 cargo test -p framelet-desktop --test visual_regression
 ```
 
 Inspect artifacts under target/slint-snapshots/. For intentional UI changes, regenerate explicitly
@@ -32,4 +30,5 @@ with SLINT_SNAPSHOT_MODE=accept, review the PNG, and commit the reference.
 Keep dimensions, scale factor, renderer, fonts, and embedded resources fixed. Add separate
 snapshots for selected modes, camera preview, recording, paused, and error states.
 
-The first PNG is intentionally not fabricated; it must be rendered from the compiled UI and reviewed.
+For intentional UI changes, render a candidate, inspect it, then explicitly accept it with
+`SLINT_SNAPSHOT_MODE=accept`. Never accept a changed reference without reviewing the PNG.
