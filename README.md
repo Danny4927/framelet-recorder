@@ -45,6 +45,7 @@ The repository currently contains the product and engineering specification. Cap
 
 ## Documentation
 
+- [Architecture (arc42 + ADRs)](docs/architecture/README.md)
 - [Product and technical specification](SPECIFICATION.md)
 - [Security policy and engineering rules](SECURITY.md)
 - [Contributor and AI-agent instructions](AGENTS.md)
