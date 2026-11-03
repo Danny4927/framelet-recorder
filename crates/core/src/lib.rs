@@ -36,6 +36,7 @@ pub enum RecordingState {
 }
 
 /// Returns whether a lifecycle transition is permitted.
+#[must_use]
 pub fn can_transition(from: RecordingState, to: RecordingState) -> bool {
     use RecordingState::{Completed, Failed, Finalizing, Idle, Paused, Preparing, Ready, Recording};
     matches!((from, to),
