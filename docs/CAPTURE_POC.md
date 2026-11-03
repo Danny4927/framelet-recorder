@@ -38,6 +38,12 @@ cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start
 
 The production workspace now has safe owned VideoFrame and AudioBlock values, explicit source kinds, and checked validation for dimensions, stride, buffer length, sample rate, channel count, and interleaved audio sample count. The first video formats are packed BGRA8/RGBA8. Streaming transport, bounded ring-buffer implementation, PipeWire frame conversion, and source-clock mapping remain PoC work.
 
+## Installation and test execution
+
+- Arch Linux / CachyOS packaging strategy: [Linux installation plan](LINUX_INSTALLATION.md).
+- KDE Plasma Wayland execution procedure and evidence template: [Real-device testing](REAL_DEVICE_TESTING.md).
+- The current CI run verifies compilation and the workspace tests only. No KDE desktop session or physical PipeWire stream has been exercised by CI. The real-device matrix below remains pending until evidence is recorded.
+
 ## Real-device matrix
 
 | Test | Windows 10/11 | Linux Wayland GNOME | Linux Wayland KDE | Linux X11 |
