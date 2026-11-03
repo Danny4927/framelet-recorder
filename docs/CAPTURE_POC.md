@@ -34,6 +34,10 @@ cargo check --manifest-path poc/wayland-portal/Cargo.toml
 cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start
 ~~~
 
+## Framelet capture-api contract
+
+The production workspace now has safe owned VideoFrame and AudioBlock values, explicit source kinds, and checked validation for dimensions, stride, buffer length, sample rate, channel count, and interleaved audio sample count. The first video formats are packed BGRA8/RGBA8. Streaming transport, bounded ring-buffer implementation, PipeWire frame conversion, and source-clock mapping remain PoC work.
+
 ## Real-device matrix
 
 | Test | Windows 10/11 | Linux Wayland GNOME | Linux Wayland KDE | Linux X11 |
