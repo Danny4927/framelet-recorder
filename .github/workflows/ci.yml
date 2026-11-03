@@ -25,6 +25,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - name: Compile isolated Wayland portal PoC
+        run: cargo check --manifest-path poc/wayland-portal/Cargo.toml
       - name: Verify visual regression baseline
         env:
           FRAMELET_RUN_VISUAL_TESTS: "1"
