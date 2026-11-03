@@ -11,12 +11,17 @@ impl SourceId {
     /// Creates an identifier after checking it is non-empty.
     pub fn new(value: impl Into<String>) -> Result<Self, CaptureError> {
         let value = value.into();
-        if value.trim().is_empty() { return Err(CaptureError::InvalidSourceId); }
+        if value.trim().is_empty() {
+            return Err(CaptureError::InvalidSourceId);
+        }
         Ok(Self(value))
     }
+
     /// Returns the identifier as text.
     #[must_use]
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 /// User-selectable capture source.
@@ -83,10 +88,12 @@ pub trait AudioSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     #[test]
     fn source_id_rejects_empty_values() {
         assert_eq!(SourceId::new(" "), Err(CaptureError::InvalidSourceId));
     }
+
     #[test]
     fn source_id_preserves_valid_value() {
         let id = SourceId::new("display-1").expect("valid test identifier");
