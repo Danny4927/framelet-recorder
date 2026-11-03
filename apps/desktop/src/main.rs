@@ -1,4 +1,4 @@
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 slint::include_modules!();
 
 fn main() -> Result<(), slint::PlatformError> {
