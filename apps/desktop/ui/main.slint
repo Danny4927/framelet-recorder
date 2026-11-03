@@ -18,26 +18,68 @@ export component MainWindow inherits Window {
             Text { text: "CAPTURE. SAVE. DONE."; color: #8491a5; font-size: 10px; vertical-alignment: center; }
         }
         Text { text: "Was möchtest du aufnehmen?"; color: #f5f7fb; font-size: 22px; font-weight: 600; }
-        GridLayout {
-            columns: 2;
+        VerticalLayout {
             spacing: 12px;
-            for mode in [
-                { name: "Bildschirm", value: "Screen", symbol: "▣" },
-                { name: "Mikrofon", value: "Microphone", symbol: "◖" },
-                { name: "Webcam", value: "Webcam", symbol: "▤" },
-                { name: "Bildschirm + Webcam", value: "ScreenAndWebcam", symbol: "▣+" }
-            ]: Rectangle {
-                height: 82px;
-                background: root.selected-mode == mode.value ? #263b58 : #1a2230;
-                border-width: root.selected-mode == mode.value ? 2px : 1px;
-                border-color: root.selected-mode == mode.value ? #6aa8ff : #2b3545;
-                border-radius: 12px;
-                TouchArea { clicked => { root.selected-mode = mode.value; } }
-                HorizontalLayout {
-                    padding: 14px;
-                    spacing: 12px;
-                    Text { text: mode.symbol; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
-                    Text { text: mode.name; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+            HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "Screen" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "Screen" ? 2px : 1px;
+                    border-color: root.selected-mode == "Screen" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "Screen"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "▣"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Bildschirm"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "Microphone" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "Microphone" ? 2px : 1px;
+                    border-color: root.selected-mode == "Microphone" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "Microphone"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "◖"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Mikrofon"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "Webcam" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "Webcam" ? 2px : 1px;
+                    border-color: root.selected-mode == "Webcam" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "Webcam"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "▤"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Webcam"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
+                }
+                Rectangle {
+                    height: 82px;
+                    background: root.selected-mode == "ScreenAndWebcam" ? #263b58 : #1a2230;
+                    border-width: root.selected-mode == "ScreenAndWebcam" ? 2px : 1px;
+                    border-color: root.selected-mode == "ScreenAndWebcam" ? #6aa8ff : #2b3545;
+                    border-radius: 12px;
+                    TouchArea { clicked => { root.selected-mode = "ScreenAndWebcam"; } }
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 12px;
+                        Text { text: "▣+"; color: #8fc0ff; font-size: 23px; vertical-alignment: center; }
+                        Text { text: "Bildschirm + Webcam"; color: #f5f7fb; font-size: 15px; font-weight: 600; vertical-alignment: center; }
+                    }
                 }
             }
         }
