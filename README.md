@@ -48,6 +48,8 @@ The repository currently contains the product and engineering specification. Cap
 - [Architecture (arc42 + ADRs)](docs/architecture/README.md)
 - [Product and technical specification](SPECIFICATION.md)
 - [Security policy and engineering rules](SECURITY.md)
+- [Linux installation plan (Arch Linux / CachyOS)](docs/LINUX_INSTALLATION.md)
+- [Real-device testing (KDE Wayland)](docs/REAL_DEVICE_TESTING.md)
 - [Contributor and AI-agent instructions](AGENTS.md)
 
 ## License
