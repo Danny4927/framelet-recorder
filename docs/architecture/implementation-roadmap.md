@@ -24,7 +24,7 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 | Phase | Scope | Status | Depends on |
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
-| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Complete in this PR (pending CI/review) | 0 |
+| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented in PR #13 (CI/review pending) | 0 |
 | 2 | Media pipeline evaluation and backend decision | Planned | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
@@ -59,7 +59,7 @@ Exit criteria:
 **Current PR:** PR #13 completes the core contract and orchestration slice for Phase 1. Production adapters and durable media storage remain later phases; the session repository contract is defined here, while its durable adapter is intentionally deferred.
 
 Deliverables:
-- Define application-owned inbound port/use cases for prepare, start, pause, resume, stop, cancel, and state query. Metrics/event subscription remains a follow-up once event semantics are specified.
+- Define application-owned inbound port/use cases for prepare, start, pause, resume, stop, cancel, and state query; define event publication and coalesced metrics snapshot contracts as outbound ports.
 - Define separate outbound ports for screen, camera, microphone, media pipeline, storage, monotonic clock, settings, session metadata repository, event publication, and metrics snapshots.
 - Introduce a Recording session aggregate with explicit identity, configuration, lifecycle state, cancellation, finalization outcome, and artifact publication only after successful finalization.
 - Make the core lifecycle authoritative; adapters report facts and never decide application state. Publish typed lifecycle/source-loss events and expose coalesced metrics snapshots.
