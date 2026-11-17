@@ -25,7 +25,7 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
 | 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
-| 2 | Media pipeline evaluation and backend decision | In progress — isolated GStreamer PoC, PR pending | 0, 1 (port requirements) |
+| 2 | Media pipeline evaluation and backend decision | In progress — isolated GStreamer PoC, PR #14 open | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
@@ -78,7 +78,7 @@ Exit criteria:
 
 ## Phase 2 — Media pipeline evaluation and decision
 
-**Current work:** PR for the isolated GStreamer appsrc spike and ADR-0013. GStreamer is an evaluation candidate only; ADR-0004 remains the authority that production selection is deferred.
+**Current work:** PR #14 contains the isolated GStreamer appsrc spike and ADR-0013. GStreamer is an evaluation candidate only; ADR-0004 remains the authority that production selection is deferred.
 
 Deliverables:
 - Compare viable media runtimes and/or libraries against Windows/Linux support, Rust integration, codecs/containers, plugin footprint, safe API availability, latency, memory, licensing, packaging, and offline operation.

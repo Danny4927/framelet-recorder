@@ -278,7 +278,7 @@ Unit tests cover state/use cases, timestamps, settings, paths, checked buffer ca
 
 ## 9. Architecture Decisions
 
-See [ADR index](adr/README.md). Phase 2 begins with [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md), which records GStreamer as an evaluation candidate only.
+See [ADR index](adr/README.md). Phase 2 work is tracked in [PR #14](https://github.com/Danny4927/framelet-recorder/pull/14) and begins with [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md), which records GStreamer as an evaluation candidate only.
 
 | ADR | Decision | Status |
 |---|---|---|
