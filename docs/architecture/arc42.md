@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.2 — capture/media contracts and initial Wayland PoC  
-**Date:** 3 November 2026  
+**Version:** 0.3 — capture contracts, Wayland PoC and microphone PoC  
+**Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, a minimal capture contract, and a lifecycle model. Native capture, media processing, storage finalization, and device integration are not implemented.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, and an isolated CPAL microphone PoC. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -102,7 +102,7 @@ flowchart TB
 | crates/capture-api | Safe source/frame/audio contracts and typed errors | Expose raw pointers, native handles, unbounded queues |
 | capture-screen (future) | Screen selection and acquisition per OS | Bypass OS permissions |
 | capture-camera (future) | Camera enumeration, negotiation, acquisition | Hide disconnects or silently switch devices |
-| capture-audio (future) | Microphone input | Block/allocate unpredictably in audio callback |
+| capture-audio (evaluation PoC only) | Microphone enumeration, F32 input and bounded sample delivery | Block/allocate/I/O in the audio callback; imply production support |
 | media-pipeline (future) | Timeline, compositing, encoding, muxing, finalization | Own UI state or silently discard audio |
 | storage (future) | Exclusive temp files, collision-safe naming, recovery | Overwrite files or report success before close |
 | config/platform (future) | Validated preferences and narrowly scoped OS integration | Become catch-all business logic |
@@ -119,8 +119,9 @@ The desktop executable is the composition root. Core depends on contracts, not S
 |---|---|
 | Slint shell | Present; scaffold only |
 | capture-api | Safe source descriptors, validated packed BGRA/RGBA video frames, and interleaved audio blocks implemented; streaming transport remains open |
+| Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
+| Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Mode enum and transition predicate; orchestration incomplete |
-| Native capture | Not implemented |
 | Media pipeline/compositing/encoding | Not implemented |
 | Storage/recovery | Not implemented |
 | Platform packaging | Not implemented |
@@ -196,21 +197,27 @@ Native runtime/plugin inventory must be explicit and reproducible. Do not load a
 ## 8. Cross-cutting Concepts
 
 ### Ownership and concurrency
+
 Use owned media blocks at asynchronous boundaries unless a safe lifetime-bound abstraction is demonstrably better. No borrowed view may outlive its source buffer. Worker cancellation and shutdown are explicit and observed.
 
 ### Backpressure
+
 Every queue has a fixed capacity and policy. Video may drop stale frames to bound latency, but drops are counted and surfaced. Audio loss is never silent. Control events cannot be starved by media payloads. UI metrics are coalesced. Queue capacities remain open until formats and throughput are measured.
 
 ### Time and synchronization
+
 Use a monotonic clock and common origin. Preserve source timestamps where possible; track audio sample positions and video sequence numbers. Handle discontinuities, variable frame rates, pause segments, and drift. Wall-clock time may label files but never drives A/V sync.
 
 ### Security and privacy
+
 Explicit user action and OS-mediated permissions; no network or telemetry. Never log captured media or unnecessary device identifiers. Validate dimensions, stride, formats, lengths, arithmetic, and paths. Restrict output permissions where supported. Review unsafe internals, FFI, advisories, licenses, native libraries, dynamic loading, and plugins.
 
 ### Error handling
+
 Typed errors cross module boundaries and become actionable UI messages. Preserve diagnostic causes without exposing sensitive content. Distinguish cancellation from denial and backend failure. No panic in production paths.
 
 ### Testing
+
 Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
 
 ## 9. Architecture Decisions
@@ -225,6 +232,8 @@ See [ADR index](adr/README.md).
 | ADR-0004 | Defer media runtime selection until PoC | Accepted (defer) |
 | ADR-0005 | Owned media blocks and explicit clock contracts | Accepted for PoC |
 | ADR-0006 | Start Wayland portal PoC with lamco-wayland | Accepted for evaluation only |
+| ADR-0007 | Lower-level PipeWire thread manager for the isolated frame PoC | Accepted for PoC |
+| ADR-0008 | Evaluate CPAL for microphone capture | Evaluation only |
 
 ## 10. Quality Requirements
 
@@ -256,7 +265,7 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | Plugin discovery risk | Supply-chain/runtime loading risk | Explicit plugin allowlist and packaged paths |
 | Capture API too small for streaming | Expensive API rework | Design ownership and event contract during PoC |
 
-Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL callback/device-loss behavior; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
+Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
 
 ## 12. Glossary
 
