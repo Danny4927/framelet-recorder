@@ -17,12 +17,12 @@ pub fn build_f32_stream(
     device: &cpal::Device,
     config: StreamConfig,
     ring: Arc<AudioSampleRing>,
-    callback_error: impl FnMut(cpal::StreamError) + Send + 'static,
-) -> Result<Stream, cpal::BuildStreamError> {
+    callback_error: impl FnMut(cpal::Error) + Send + 'static,
+) -> Result<Stream, String> {
     let callback_failed = Arc::new(AtomicBool::new(false));
     let callback_failed_data = Arc::clone(&callback_failed);
     device.build_input_stream(
-        &config,
+        config,
         move |data: &Data, _info: &InputCallbackInfo| {
             if let Some(samples) = data.as_slice::<f32>() {
                 let _ = ring.push_from_callback(samples);
@@ -32,5 +32,5 @@ pub fn build_f32_stream(
         },
         callback_error,
         None,
-    )
+    ).map_err(|error| error.to_string())
 }
