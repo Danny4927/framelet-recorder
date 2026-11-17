@@ -82,12 +82,27 @@ pub fn bounded<T>(capacity: usize) -> Result<(MediaProducer<T>, MediaConsumer<T>
 }
 
 impl<T> MediaProducer<T> {
-    /// Never waits for capacity. A full queue rejects the newest item.
+    /// Never waits for capacity. A full media queue rejects the newest payload.
     pub fn try_push(&self, item: T) -> Result<(), QueueSendError<T>> {
+        self.try_push_inner(item, true)
+    }
+
+    /// Non-blocking control enqueue. Full retries do not count as dropped media.
+    pub fn try_push_control(&self, item: T) -> Result<(), QueueSendError<T>> {
+        self.try_push_inner(item, false)
+    }
+
+    fn try_push_inner(
+        &self,
+        item: T,
+        count_rejection: bool,
+    ) -> Result<(), QueueSendError<T>> {
         let mut queued = self.metrics.queued.load(Ordering::Relaxed);
         loop {
             if queued >= self.metrics.capacity {
-                self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                if count_rejection {
+                    self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                }
                 return Err(QueueSendError::Full(item));
             }
             match self.metrics.queued.compare_exchange_weak(
@@ -109,12 +124,16 @@ impl<T> MediaProducer<T> {
             }
             Err(TrySendError::Full(item)) => {
                 self.metrics.queued.fetch_sub(1, Ordering::AcqRel);
-                self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                if count_rejection {
+                    self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                }
                 Err(QueueSendError::Full(item))
             }
             Err(TrySendError::Disconnected(item)) => {
                 self.metrics.queued.fetch_sub(1, Ordering::AcqRel);
-                self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                if count_rejection {
+                    self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                }
                 Err(QueueSendError::Disconnected(item))
             }
         }
@@ -190,6 +209,17 @@ mod tests {
         assert_eq!(metrics.high_watermark, 2);
         assert_eq!(metrics.accepted, 2);
         assert_eq!(metrics.rejected, 1);
+    }
+
+    #[test]
+    fn control_retry_does_not_count_as_dropped_media() {
+        let (producer, _consumer) = bounded(1).expect("positive capacity");
+        assert_eq!(producer.try_push(1), Ok(()));
+        assert_eq!(
+            producer.try_push_control(2),
+            Err(QueueSendError::Full(2))
+        );
+        assert_eq!(producer.metrics().rejected, 0);
     }
 
     #[test]
