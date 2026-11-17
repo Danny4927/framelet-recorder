@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.7 — Phase 2 GStreamer evaluation PoC  
+**Version:** 0.8 — Phase 2 media evaluation validation in progress  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -70,74 +70,49 @@ Domain-Driven Design complements the hexagonal architecture: the domain model an
 
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
 2. Hexagonal architecture: all inbound and outbound interactions cross application-owned ports; concrete adapters depend inward on core-owned contracts. This is mandatory for every production feature, not only OS capture.
-3. Core-owned lifecycle: one authority coordinates prepare, record, pause, resume, stop, cancel, and finalize.
-4. Granular outbound contracts: screen, camera, microphone, media, storage, monotonic clock, settings, session metadata, events, and metrics are separate core-owned ports.
-5. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
-6. One monotonic media timeline with a common recording origin.
-7. Local transactional output: exclusive temporary file, successful finalization, then collision-safe publication.
-8. Fail visibly: count video drops; detect/report audio loss, disconnects, and finalization errors.
-9. Safe Rust boundary; third-party unsafe internals are reviewed risks.
-10. Capture/media dependencies remain candidates until PoCs and packaging/security review pass.
+3. Core-owned lifecycle: the Recording aggregate is authoritative for state transitions, cancellation, finalization outcome, and artifact publication.
+4. Safe Rust: first-party crates forbid unsafe code; native/library unsafe boundaries remain isolated and reviewed.
+5. Local-first: output is local, no telemetry or network dependencies.
+6. Incremental validation: isolated PoCs prove platform/media behavior before any production adapter or dependency is approved.
+7. Bounded concurrency: callbacks and UI remain non-blocking; media queues use explicit capacities and overload behavior.
+8. Documentation as a gate: all 12 arc42 sections and ADRs track structural decisions; the roadmap defines phase exit criteria.
 
 ## 5. Building Block View
 
-The Phase 1 core defines `RecordingSession` as the initial aggregate, `RecordingConfiguration` and `RecordingArtifact` as validated value concepts, and `RecordingId` as session identity. `RecordingUseCases` is the inbound application port. `ports.rs` defines source-specific screen, camera, and microphone contracts plus media pipeline, storage, monotonic clock, settings, session metadata repository, event publisher, and metrics snapshot contracts. Native types are translated at adapter boundaries; media payloads cross the boundary as owned `AudioBlock` and `VideoFrame` values from `capture-api`. The `RecordingResources` facade is retained for the initial application-service implementation; future composition can inject the granular adapters without changing domain types. The repository contract stores session metadata only; transactional media-file publication is implemented in Phase 3. Event publication is typed and observer-facing; high-frequency updates must be coalesced and must never run on real-time callbacks.
+### 5.1 Level 1 — System
 
-The detailed backend-neutral media boundary is specified in [Capture and media contracts](capture-and-media-contracts.md). It defines source identity/capabilities, owned video/audio blocks, validation, clock mapping, events/errors, bounded transport, and cancellation.
+Framelet is a single desktop application. The core contains the Recording bounded context and application use cases. Inbound adapters accept user commands; outbound adapters implement core-owned ports for devices, media, clock, metadata, settings, and storage. The executable is the only composition root.
 
-### 5.1 Application overview
+### 5.2 Level 2 — Modules
 
-~~~mermaid
-flowchart TB
-  Desktop[Desktop executable / composition root]
-  Desktop --> UI[Slint UI and UI adapter]
-  Desktop --> Core[Core: use cases and lifecycle]
-  Core --> Ports[Application-owned ports]
-  Ports --> Capture[Platform capture adapters]
-  Ports --> Media[Media pipeline adapter]
-  Ports --> Storage[Storage adapter]
-  Capture --> OS[OS and devices]
-  Media --> Runtime[Native media runtime — candidate]
-  Storage --> FS[Local filesystem]
-~~~
-
-### 5.2 Responsibilities
-
-| Component | Responsibility | Must not do |
+| Module | Responsibility | Depends on |
 |---|---|---|
-| apps/desktop | Entry point, Slint window, wiring, UI event translation | Capture, encode, blocking I/O, own lifecycle rules |
-| crates/core | Use cases, validated commands, state machine, orchestration | Depend on Slint or concrete platform/media crates |
-| crates/capture-api | Safe source/frame/audio contracts, validation and bounded worker-level audio transport | Expose raw pointers, native handles, unbounded queues or callback-unsafe abstractions |
-| capture-screen (future) | Screen selection and acquisition per OS | Bypass OS permissions |
-| capture-camera (future) | Camera enumeration, negotiation, acquisition | Hide disconnects or silently switch devices |
-| capture-audio (evaluation PoC only) | Microphone enumeration, F32 input and bounded sample delivery | Block/allocate/I/O in the audio callback; imply production support |
-| media-pipeline (future) | Timeline, compositing, encoding, muxing, finalization | Own UI state or silently discard audio |
-| storage (future) | Exclusive temp files, collision-safe naming, recovery | Overwrite files or report success before close |
-| config/platform (future) | Validated preferences and narrowly scoped OS integration | Become catch-all business logic |
-
-Create crates only when real code justifies a boundary. No empty placeholder members.
+| `apps/desktop` | Slint UI, inbound command adapter, future composition root | Core; composition root may construct adapters |
+| `crates/core` | Recording domain aggregate, application use cases, ports, typed events/errors | capture-api contracts and standard library |
+| `crates/capture-api` | Backend-neutral source descriptors and validated owned media blocks | Standard library |
+| Future capture adapters | OS/device capture mechanics and native type translation | Core ports, capture-api |
+| Future media adapter | Encoding, muxing, bounded media queues and finalization | Core media port, capture-api |
+| Future storage adapter | Temp output, flush/close, publication and recovery | Core storage port |
+| `poc/*` | Isolated, opt-in technology evaluations | Evaluation-only dependencies; never imported by core |
 
 ### 5.3 Hexagonal architecture and dependency rule (binding)
 
-The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities. The Phase 1 CI workflow runs `scripts/check-architecture.py` to reject new direct core dependencies outside the backend-neutral capture contract and to detect imports of known UI/native runtime APIs.
-
-- **Inbound ports:** typed use-case APIs such as PrepareRecording, StartRecording, PauseRecording, ResumeRecording, StopRecording, CancelRecording, and query/state subscriptions.
-- **Inbound adapters:** Slint UI event handlers and future command/automation entry points. They translate external input into inbound-port calls and render returned state/events; they contain no business rules.
-- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, monotonic clock, session metadata, event publication, and metrics snapshots.
-- **Outbound adapters:** concrete OS/capture, CPAL or future audio backend, camera, media runtime, filesystem, and settings implementations.
+- **Core:** owns the domain model, application use cases, inbound ports, outbound ports, and application-level types/errors.
+- **Inbound adapters:** UI and command handlers translate user intent into use-case calls.
+- **Outbound adapters:** implement ports for capture devices, media runtime, filesystem, clock, and settings.
 - **Composition root:** constructs adapters and injects them into core use cases. It is the only place allowed to know concrete adapter types.
 
 Dependency direction is strictly inward: adapters may depend on core-owned contracts; core must not import adapter crates, Slint, OS APIs, or media-library types. Translate native/library types and errors at adapter boundaries. Never pass framework types through a port.
 
 No UI-to-adapter shortcut, adapter-to-adapter dependency, global service locator, or concrete backend selection inside core is allowed. Core tests use fakes. Add compile-time dependency checks or architecture tests as the workspace grows.
 
-```text
+~~~text
 Inbound actor -> Inbound adapter -> Inbound port -> Application core
                                                 |
                                      Outbound port (owned by core)
                                                 |
                                   Outbound adapter -> OS/library/device
-```
+~~~
 
 See ADR-0010. This rule is a release/PR acceptance criterion, not an aspirational target.
 
@@ -176,7 +151,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
-| Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC added for synthetic VP8/Vorbis-to-Matroska evaluation; not production-wired; independent playback, A/V drift, bounded overload and performance gates remain open |
+| Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska EOS finalization; no production adapter, independent playback proof, overload validation, or benchmark evidence yet |
 | Storage/recovery | Not implemented |
 | Platform packaging | Not implemented |
 
@@ -204,7 +179,6 @@ sequenceDiagram
   Storage-->>Core: Output ready
   Core->>Media: Prepare timeline and pipeline
   Media-->>Core: Ready
-  Core-->>UI: Ready event
   User->>UI: Confirm start
   UI->>Core: Start
   Core->>Capture: Start producers
@@ -258,11 +232,11 @@ Use owned media blocks at asynchronous boundaries unless a safe lifetime-bound a
 
 ### Backpressure
 
-Every queue has a fixed capacity and policy. Video may drop stale frames to bound latency, but drops are counted and surfaced. Audio loss is never silent. Control events cannot be starved by media payloads. UI metrics are coalesced. Queue capacities remain open until formats and throughput are measured.
+Every queue has a fixed capacity and policy. Video may drop stale frames to bound latency, but drops are counted and surfaced. Audio loss is never silent. Control events cannot be starved by media payloads. Queue capacities remain open until formats and throughput are measured. The Phase 2 validation slice adds regression coverage for the chosen queue-full policy and timestamp continuity; it does not promote the diagnostic PoC to a production media adapter.
 
 ### Time and synchronization
 
-Use a monotonic clock and common origin. Preserve source timestamps where possible; track audio sample positions and video sequence numbers. Handle discontinuities, variable frame rates, pause segments, and drift. Wall-clock time may label files but never drives A/V sync.
+Use a monotonic clock and common origin. Preserve source timestamps where possible; track audio sample positions and video sequence numbers. Handle discontinuities, variable frame rates, pause segments, and drift. Wall-clock time may label files but never drives A/V sync. Test fixtures must make the expected audio/video timeline explicit so tests detect mismatched PTS, durations, and sample positions.
 
 ### Security and privacy
 
@@ -270,15 +244,15 @@ Explicit user action and OS-mediated permissions; no network or telemetry. Never
 
 ### Error handling
 
-Typed errors cross module boundaries and become actionable UI messages. Preserve diagnostic causes without exposing sensitive content. Distinguish cancellation from denial and backend failure. No panic in production paths.
+Typed errors cross module boundaries and become actionable UI messages. Preserve diagnostic causes without exposing sensitive content. Distinguish cancellation from denial and backend failure. No panic in production paths. Pipeline errors, missing terminal messages, and EOS timeout must be observable as failed finalization; candidate output is not reported as complete.
 
 ### Testing
 
-Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
+Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, queue overload behavior, terminal EOS/error handling, and incomplete-output cleanup. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
 
 ## 9. Architecture Decisions
 
-See [ADR index](adr/README.md). Phase 2 work is tracked in [PR #14](https://github.com/Danny4927/framelet-recorder/pull/14) and begins with [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md), which records GStreamer as an evaluation candidate only.
+See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md); the next validation slice is implementation work only and does not supersede the deferred production choice in ADR-0004.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -293,6 +267,8 @@ See [ADR index](adr/README.md). Phase 2 work is tracked in [PR #14](https://gith
 | ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
 | ADR-0010 | Make hexagonal architecture and arc42 compliance binding | Accepted |
 | ADR-0011 | Make Domain-Driven Design binding for the application domain | Accepted |
+| ADR-0012 | Define granular Recording bounded-context port boundaries | Accepted |
+| ADR-0013 | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
 
 ## 10. Quality Requirements
 
@@ -309,6 +285,9 @@ See [ADR index](adr/README.md). Phase 2 work is tracked in [PR #14](https://gith
 | Q-09 | High-rate metrics | UI responsive; metrics coalesced | UI load test |
 | Q-10 | Resource finalization fails | Session becomes Failed and never exposes a completed artifact | Fake-port application test |
 | Q-11 | Illegal lifecycle command | Core rejects the command without invoking the external resource port | Aggregate/application unit test |
+| Q-12 | Media consumer stops accepting buffers | Queue stays within capacity; overload is counted; audio loss is explicit | Isolated media PoC stress test |
+| Q-13 | One stream ends before the other | Finalization waits for both branches or reports timeout/error; no false completion | Isolated media PoC test |
+| Q-14 | Pipeline fails before EOS | Candidate output is removed or explicitly marked incomplete; no completed artifact is printed | Isolated media PoC failure test |
 
 SPECIFICATION.md contains performance targets. Publish measurements only with hardware, OS, backend, resolution, frame rate, codecs, duration, and encoder mode.
 
