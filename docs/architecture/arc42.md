@@ -235,6 +235,7 @@ See [ADR index](adr/README.md).
 | ADR-0007 | Lower-level PipeWire thread manager for the isolated frame PoC | Accepted for PoC |
 | ADR-0008 | Evaluate CPAL for microphone capture | Evaluation only |
 | ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
+| ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
 
 ## 10. Quality Requirements
 
