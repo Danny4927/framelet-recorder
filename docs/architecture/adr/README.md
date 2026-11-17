@@ -14,5 +14,6 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0008](ADR-0008-cpal-microphone-capture.md) | Evaluate CPAL for microphone capture | Evaluation only |
 | [ADR-0009](ADR-0009-bounded-audio-block-transport.md) | Bounded worker-level audio block transport | Accepted for backend-neutral API |
 | [ADR-0010](ADR-0010-binding-hexagonal-architecture-and-arc42.md) | Make hexagonal architecture and arc42 compliance binding | Accepted |
+| [ADR-0011](ADR-0011-domain-driven-design.md) | Make Domain-Driven Design binding for the application domain | Accepted |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.
