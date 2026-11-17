@@ -192,8 +192,12 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                         .context("pushing queued audio block")?;
                 }
                 MediaPacket::End => {
-                    video_source.end_of_stream().context("ending video stream")?;
-                    audio_source.end_of_stream().context("ending audio stream")?;
+                    video_source
+                        .end_of_stream()
+                        .context("ending video stream")?;
+                    audio_source
+                        .end_of_stream()
+                        .context("ending audio stream")?;
                     return Ok(());
                 }
             }
@@ -339,10 +343,7 @@ fn finish_pipeline_with_timeout(pipeline: &gst::Pipeline, timeout: Duration) -> 
     let timeout =
         gst::ClockTime::from_nseconds(u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX));
     let message = bus
-        .timed_pop_filtered(
-            timeout,
-            &[gst::MessageType::Eos, gst::MessageType::Error],
-        )
+        .timed_pop_filtered(timeout, &[gst::MessageType::Eos, gst::MessageType::Error])
         .context("timed out waiting for media finalization")?;
 
     match message.view() {
