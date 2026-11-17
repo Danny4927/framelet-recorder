@@ -7,6 +7,19 @@
 
 This roadmap defines the intended implementation order, dependencies, deliverables, and exit criteria. A phase is not complete merely because code compiles: its architectural, behavioral, test, and documentation gates must also pass. Re-plan through an ADR when evidence requires a structural change.
 
+## Delivery principle: vertical, UI-testable increments
+
+After the architecture/core foundation, user-visible capabilities MUST be delivered as vertical slices. Each slice connects the real capability through its adapter, core use case, desktop composition root, and Slint UI in the same PR (or a clearly linked, immediately following PR when a dependency gate makes that impossible). Do not accumulate completed backend features that cannot be exercised from the application until a late integration phase.
+
+Every slice must:
+- Expose the implemented capability in the running desktop UI, with real state and typed error feedback; never use a mock success state as evidence of production integration.
+- Include a concise manual UI test procedure and record which OS/device combinations were actually tested. CI/UI snapshots do not replace real-device evidence.
+- Keep not-yet-implemented controls visibly disabled or explicitly marked as unavailable; no dead buttons, fake device selectors, or misleading “ready” status.
+- Include automated core/adapter/UI tests and preserve hexagonal dependency direction, DDD invariants, safe-Rust rules, and non-blocking UI.
+- Update this roadmap and relevant arc42/specification sections in the same PR.
+
+Track four separate evidence states: **implemented**, **automated-tested**, **UI-integrated**, and **real-device-validated**. Never conflate them.
+
 ## Delivery rules applying to every phase
 
 1. Keep the domain model, ubiquitous language, invariants, and application use cases in the core. Define ports in application-owned code.
@@ -30,10 +43,10 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
 | 6 | Camera adapter and screen + camera composition | Planned | 1, 2, 5 |
-| 7 | Desktop composition root and UI integration | Planned | 1–6 (incremental wiring only) |
+| 7 | Desktop composition root and UI integration | Cross-cutting: integrate each capability incrementally; no late big-bang UI phase | 1–6 |
 | 8 | End-to-end hardening, performance, packaging and release gates | Planned | 3–7 |
 
-Phases may be delivered as smaller PRs. Parallel work is allowed only where the port contracts and dependencies are already stable.
+Phases may be delivered as smaller PRs. Parallel work is allowed only where the port contracts and dependencies are already stable. Phase 7 is not a deferred integration bucket: the composition root and UI are extended alongside Phases 4–6 so each finished capability can be tried immediately.
 
 ## Phase 0 — Architecture baseline and transport contracts
 
@@ -124,7 +137,9 @@ Exit criteria:
 - [ ] Desktop/media integration and closed-writer hand-off are verified.
 - [ ] Filesystem durability and real power-loss recovery are validated on supported OS/filesystems.
 
-## Phase 4 — Production microphone adapter
+## Phase 4 — Production microphone adapter and first usable UI slice
+
+This phase must end with microphone-only capture and optional microphone input selectable and exercisable from the running desktop application on each validated platform. The microphone selector must not be a decorative placeholder.
 
 Deliverables:
 - Promote the isolated CPAL evaluation only after dependency/security review and real-device tests.
@@ -140,7 +155,9 @@ Exit criteria:
 - [ ] Callback performs no allocation, blocking, I/O, logging, or encoding.
 - [ ] Adapter conforms to core port tests and does not expose CPAL types.
 
-## Phase 5 — Screen capture adapters
+## Phase 5 — Screen capture adapters and UI slice
+
+This phase must end with OS-mediated display/window selection and screen capture accessible from the running desktop application. Preserve the already-working microphone UI path.
 
 Deliverables:
 - Wayland adapter using user-mediated XDG Desktop Portal selection and PipeWire stream; retain a safe API boundary and explicit session ownership.
@@ -155,7 +172,9 @@ Exit criteria:
 - [ ] Frame buffers are owned/validated; queues bounded; drops counted.
 - [ ] No bypass of OS permission model and no first-party unsafe code.
 
-## Phase 6 — Camera and picture-in-picture
+## Phase 6 — Camera, picture-in-picture and UI slice
+
+This phase must end with webcam-only and screen-plus-webcam modes accessible from the running desktop application. Preserve the microphone and screen paths.
 
 Deliverables:
 - Camera port adapter with explicit device/format negotiation and hot-unplug handling.
@@ -169,18 +188,22 @@ Exit criteria:
 - [ ] PIP layout and A/V synchronization pass integration tests.
 - [ ] Resource use remains bounded during long sessions.
 
-## Phase 7 — Desktop composition root and UI integration
+## Phase 7 — Continuous desktop composition and UI integration
+
+This is a cross-cutting activity, not a final integration phase. It starts with the first user-visible slice and continues in every subsequent PR.
 
 Deliverables:
-- Desktop executable constructs and injects selected adapters into core use cases.
+- Desktop executable constructs and injects each newly implemented adapter into core use cases as soon as its contracts and evidence gates permit.
 - Slint UI acts only as an inbound adapter: typed user commands in, state/progress/events out.
+- Every completed capability is immediately accessible from the running app; incomplete capabilities are explicitly unavailable rather than represented by non-functional controls.
 - UI remains responsive; no capture, encoding, or filesystem work on UI thread.
 - Preferences are validated and stored through a settings port.
 
 Exit criteria:
 - [ ] No UI-to-concrete-adapter shortcuts.
 - [ ] No global service locator or concrete backend construction in core.
-- [ ] All MVP modes can be exercised through the application use cases.
+- [ ] Every completed capability has an end-to-end UI path and manual test procedure.
+- [ ] UI distinguishes implemented, automated-tested, UI-integrated, and real-device-validated.
 - [ ] Accessibility, cancellation, error states, and progress are covered by UI tests.
 
 ## Phase 8 — End-to-end hardening and release
