@@ -2,12 +2,14 @@
 
 //! Isolated GStreamer media pipeline PoC.
 //!
+//! Deterministic hardware-free regression tests live in `validation.rs`.
+//!
 //! Synthetic owned audio/video blocks are pushed through appsrc elements;
 //! native capture adapters and the production workspace are deliberately not
 //! involved. This PoC is only a pipeline wiring smoke test until real encoding,
 //! muxing, playback, clock synchronization and failure gates are measured.
 
-use std::{path::PathBuf, time::Duration};
+#[cfg(test)]\nmod validation;\n\nuse std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use framelet_capture_api::{AudioBlock, PixelFormat, VideoFrame, VideoFrameMetadata};
