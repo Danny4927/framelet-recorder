@@ -269,7 +269,8 @@ See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in 
 | ADR-0011 | Make Domain-Driven Design binding for the application domain | Accepted |
 | ADR-0012 | Define granular Recording bounded-context port boundaries | Accepted |
 | ADR-0013 | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
-| ADR-0014 | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |\n| ADR-0015 | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only |
+| ADR-0014 | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |
+| ADR-0015 | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only |
 
 ## 10. Quality Requirements
 
