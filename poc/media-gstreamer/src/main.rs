@@ -295,7 +295,7 @@ mod integration_tests {
         let output = std::env::temp_dir().join(format!(
             "framelet-gstreamer-integration-{}-{}.mkv",
             std::process::id(),
-            std::thread::current().name().unwrap_or("test")
+            "eos"
         ));
         let _ = std::fs::remove_file(&output);
 
