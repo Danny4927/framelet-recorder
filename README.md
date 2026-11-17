@@ -41,7 +41,7 @@ System audio capture is out of scope.
 
 ## Status
 
-The repository contains the product and engineering specification, the Recording core/use cases and ports, safe media data contracts, a bounded worker-level audio block queue, and isolated Wayland, CPAL microphone, and GStreamer media proof-of-concepts. CPAL and GStreamer remain outside the production workspace. No production media backend is approved; capture and media PoCs still require real-device, independent playback, security and packaging validation.
+The repository contains the product and engineering specification, the Recording core/use cases and ports, safe media data contracts, a bounded worker-level audio block queue, and isolated Wayland, CPAL microphone, and GStreamer media proof-of-concepts. The GStreamer PoC currently demonstrates synthetic dual-stream appsrc wiring and EOS-driven Matroska finalization only. CPAL and GStreamer remain outside the production workspace. No production media backend is approved; independent playback, bounded overload behavior, A/V drift/performance measurements, security review, and clean-machine packaging validation remain open.
 
 ## Documentation
 
