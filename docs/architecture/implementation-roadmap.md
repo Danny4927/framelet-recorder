@@ -25,7 +25,7 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
 | 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
-| 2 | Media pipeline evaluation and backend decision | In progress — isolated GStreamer PoC, PR #14 open | 0, 1 (port requirements) |
+| 2 | Media pipeline evaluation and backend decision | In progress — initial isolated GStreamer spike merged in PR #14; validation slice in progress | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
@@ -56,7 +56,7 @@ Exit criteria:
 
 ## Phase 1 — Core use cases and ports
 
-**Current PR:** PR #13 completes the core contract and orchestration slice for Phase 1. Production adapters and durable media storage remain later phases; the session repository contract is defined here, while its durable adapter is intentionally deferred.
+**PR #13 merged:** completes the core contract and orchestration slice for Phase 1. Production adapters and durable media storage remain later phases; the session repository contract is defined here, while its durable adapter is intentionally deferred.
 
 Deliverables:
 - Define application-owned inbound port/use cases for prepare, start, pause, resume, stop, cancel, and state query; define event publication and coalesced metrics snapshot contracts as outbound ports.
@@ -78,12 +78,16 @@ Exit criteria:
 
 ## Phase 2 — Media pipeline evaluation and decision
 
-**Current work:** PR #14 contains the isolated GStreamer appsrc spike and ADR-0013. GStreamer is an evaluation candidate only; ADR-0004 remains the authority that production selection is deferred.
+**Merged baseline:** PR #14 added an isolated GStreamer `appsrc` dual-stream VP8/Vorbis-to-Matroska spike and proposed ADR-0013. It remains an evaluation candidate only; ADR-0004 still defers production backend selection.
+
+**Next validation slice:** PR #15 adds reproducible tests and measurements to the isolated PoC. It does not complete Phase 2 or approve a production runtime.
 
 Deliverables:
 - Compare viable media runtimes and/or libraries against Windows/Linux support, Rust integration, codecs/containers, plugin footprint, safe API availability, latency, memory, licensing, packaging, and offline operation.
 - Build a narrow isolated PoC that accepts timestamped owned audio/video blocks, encodes/muxes a local file, and finalizes deterministically. The first synthetic VP8/Vorbis-to-Matroska spike is not the final product format.
-- Measure startup, CPU/RSS, queue occupancy, A/V sync, stop-to-finalize latency, and failure recovery.
+- Exercise EOS and pipeline failure paths deterministically, and verify that incomplete candidate outputs are never presented as completed artifacts.
+- Add explicit bounded queue behavior and overload accounting before drawing resource/performance conclusions. Media queueing must not block the control path.
+- Measure startup, CPU/RSS, queue occupancy, A/V sync, stop-to-finalize latency, and failure recovery. Record test configuration and avoid presenting hosted CI timings as representative performance data.
 - Compare GStreamer with FFmpeg-based Rust bindings and viable pure-Rust media stacks; record the selected approach (or continued deferral) in a superseding ADR. Do not let the candidate runtime leak through core ports.
 
 Exit criteria:
