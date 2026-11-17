@@ -1,6 +1,8 @@
-# Wayland portal + PipeWire frame PoC — milestone 2
+# Wayland portal + PipeWire capture-lifecycle PoC — milestone 3
 
-This isolated PoC exercises the XDG Desktop Portal source picker and receives actual CPU-backed frames through PipeWire. It is deliberately outside the production Cargo workspace and does not add capture dependencies to Framelet itself.
+This isolated PoC exercises XDG Desktop Portal source selection, receives CPU-backed PipeWire frames, validates/converts them into owned Framelet frames, reports capture statistics, and shuts down the PipeWire worker before releasing the portal session.
+
+It remains outside the production Cargo workspace. It does not encode, save, or otherwise persist captured pixels.
 
 ## Requirements
 
@@ -9,32 +11,53 @@ This isolated PoC exercises the XDG Desktop Portal source picker and receives ac
 - PipeWire runtime and development libraries installed.
 - Rust 1.92+.
 
-The PoC uses the portal-only feature of `lamco-wayland 0.8.4` and the lower-level `PipeWireThreadManager` from `lamco-pipewire 0.8.4`. It deliberately does not use `PipeWireManager::frame_receiver`: in the pinned source that API drops its frame sender in `create_stream`.
+The PoC pins `lamco-wayland 0.8.4` and `lamco-pipewire 0.8.4`. It uses the lower-level `PipeWireThreadManager`; it does not use the known broken `PipeWireManager::frame_receiver` channel.
 
 ## Run
 
 From the repository root:
 
-~~~bash
+```bash
 cargo check --manifest-path poc/wayland-portal/Cargo.toml
 cargo test --manifest-path poc/wayland-portal/Cargo.toml
+cargo clippy --manifest-path poc/wayland-portal/Cargo.toml --all-targets -- -D warnings
+cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start
+```
+
+The `--start` flag is required to open the OS source/permission dialog. It runs for up to ten minutes by default, then shuts down cleanly. Use:
+
+- `--frames N` to stop after N valid frames.
+- `--duration-seconds N` to set a shorter/longer time limit.
+- When both are supplied, the first reached limit stops capture.
+
+For example, a quick smoke test is:
+
+```bash
 cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start --frames 120
-~~~
+```
 
-The `--start` flag opens the OS source/permission dialog. Select a monitor or window. `--frames` controls how many valid frames must arrive before the PoC exits (default 120). Each wait has a five-second timeout. A timeout or five rejected frames is a failure, not a successful empty capture.
+## Statistics
 
-## Scope and safety
+Progress is printed every five seconds and at shutdown:
 
-- Captures only the first stream returned by the portal.
-- Requests CPU-backed buffers (`with_dmabuf(false)`); DMA-BUF frames are rejected explicitly.
-- Accepts BGRA, BGRx, RGBA, and RGBx packed 32-bit buffers; converts them to owned Framelet BGRA frames.
-- Checks dimensions, stride, checked buffer-size arithmetic, and actual byte length before conversion and again through `framelet-capture-api`.
-- Uses the PipeWire library's bounded frame queue; no unbounded frame queue is introduced here.
-- Does not write captured pixels to disk or create a recording.
-- First-party Rust remains `#![forbid(unsafe_code)]`. `lamco-pipewire` contains third-party unsafe/FFI internals; this is an explicitly reviewed dependency boundary, not a claim that the dependency graph is unsafe-free.
+- elapsed duration and validated/rejected frame counts;
+- received frames per second;
+- sequence gaps (best-effort indication of missing frames);
+- timestamp regressions;
+- PipeWire-reported corrupted buffers;
+- cumulative owned frame bytes and maximum frame size.
 
-The portal session must remain alive for the entire stream. The portal crate documents that the PipeWire FD ownership is transferred to its session handle and then to the PipeWire thread manager. The exact upstream source is pinned at v0.8.4 in [ADR-0007](../docs/architecture/adr/ADR-0007-lamco-pipewire-frame-delivery.md).
+The reported FPS is a process-side receive rate, not a guarantee of compositor output FPS. Sequence gaps depend on upstream frame identifiers and should be interpreted as diagnostic evidence, not a definitive PipeWire drop count. Memory figures are frame-byte throughput/high-water values, not process RSS.
 
-## What this PoC does not prove
+## Lifecycle and limitations
 
-A CI build or unit test does not prove real screen capture. Actual KDE Plasma Wayland testing is still required for source selection, frame delivery, cancellation, session closure, display removal, sustained capture, CPU/memory use, and shutdown. Do not use this as a production backend yet.
+- A five-second frame wait timeout is a hard failure unless the configured duration has elapsed.
+- Five rejected frames stop the PoC.
+- On normal completion and handled receive/rejection errors, the PipeWire thread is shut down before the portal session is dropped.
+- The bounded frame queue belongs to the pinned PipeWire dependency; the PoC adds no unbounded queue.
+- Only the first stream is captured.
+- CPU-backed BGRA, BGRx, RGBA, and RGBx are supported; DMA-BUF and other formats are rejected.
+- No microphone, webcam, muxing, file output, pause/resume, or A/V synchronization is implemented.
+- Rust code in this PoC forbids first-party unsafe code. Third-party unsafe/FFI internals still require dependency review.
+
+This is not production-backend approval. CI and unit tests do not replace a real KDE/GNOME Wayland test.

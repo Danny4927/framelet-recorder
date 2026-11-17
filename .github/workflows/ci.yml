@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "feat/**"]
+    branches: [main, "feat/**", "poc/**"]
   pull_request:
   workflow_dispatch:
 
@@ -17,7 +17,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - name: Install Slint build dependencies
+      - name: Install Slint and PipeWire build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install --yes libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev
@@ -31,6 +31,8 @@ jobs:
         run: cargo test --manifest-path poc/wayland-portal/Cargo.toml
       - name: Lint isolated Wayland portal PoC
         run: cargo clippy --manifest-path poc/wayland-portal/Cargo.toml --all-targets -- -D warnings
+      - name: Format isolated Wayland portal PoC
+        run: cargo fmt --manifest-path poc/wayland-portal/Cargo.toml -- --check
       - name: Verify visual regression baseline
         env:
           FRAMELET_RUN_VISUAL_TESTS: "1"
