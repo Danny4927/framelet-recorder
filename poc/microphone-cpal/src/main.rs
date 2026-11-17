@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     for (index, device) in host.input_devices()?.enumerate() {
         let name = format!("Input device {index}");
         descriptors.push(SourceDescriptor {
-            id: SourceId::new(format!("cpal-input-{index}")).map_err(|error| format!("invalid source identifier: {error:?}"))?,
+            id: SourceId::new(format!("cpal-input-{index}"))
+                .map_err(|error| format!("invalid source identifier: {error:?}"))?,
             name,
             kind: SourceKind::Microphone,
         });
@@ -55,7 +56,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .and_then(|position| args.get(position + 1))
             .ok_or("--record requires --device INDEX")?
             .parse::<usize>()?;
-        let device = devices.get(index).ok_or("microphone index is out of range")?;
+        let device = devices
+            .get(index)
+            .ok_or("microphone index is out of range")?;
         record_device(device, parse_duration(&args)?)?;
     }
 
