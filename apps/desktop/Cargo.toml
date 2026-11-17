@@ -8,6 +8,7 @@ build = "build.rs"
 
 [dependencies]
 framelet-core = { path = "../../crates/core", version = "0.1.0" }
+framelet-storage = { path = "../../crates/storage", version = "0.1.0" }
 slint = { version = "=1.18.1", features = ["unstable-winit-030"] }
 
 [build-dependencies]

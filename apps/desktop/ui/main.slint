@@ -1,4 +1,4 @@
-import { Button, CheckBox, ComboBox } from "std-widgets.slint";
+import { Button } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
     title: "Framelet";
@@ -6,8 +6,10 @@ export component MainWindow inherits Window {
     height: 560px;
     background: #10141c;
     in-out property <string> selected-mode: "Screen";
-    in-out property <string> status-message: "Bereit für deine Aufnahme";
-    callback start-recording();
+    in-out property <string> status-message: "Aufnahme noch nicht verfügbar";
+    in-out property <string> output-directory: "";
+    in-out property <string> recovery-message: "Noch nicht geprüft";
+    callback scan-recovery();
 
     VerticalLayout {
         padding: 28px;
@@ -86,56 +88,41 @@ export component MainWindow inherits Window {
         Rectangle {
             background: #1a2230;
             border-radius: 12px;
-            height: 112px;
+            height: 122px;
             VerticalLayout {
-                padding: 16px;
-                spacing: 10px;
-                Text { text: "AUDIO"; color: #8491a5; font-size: 10px; font-weight: 700; }
+                padding: 12px;
+                spacing: 7px;
+                Text { text: "SPEICHERORT"; color: #8491a5; font-size: 10px; font-weight: 700; }
                 HorizontalLayout {
-                    spacing: 12px;
-                    Rectangle {
-                        width: 22px;
-                        height: 22px;
-                        background: #1769c2;
-                        border-radius: 4px;
-                        Text { text: "✓"; color: #ffffff; horizontal-alignment: center; vertical-alignment: center; }
+                    spacing: 8px;
+                    Text {
+                        text: root.output-directory == "" ? "Wird beim Start gesetzt" : root.output-directory;
+                        color: #e1e7f0;
+                        vertical-alignment: center;
+                        overflow: elide;
                     }
-                    Text { text: "Mikrofon aufnehmen"; color: #e1e7f0; vertical-alignment: center; }
-                    Rectangle {
-                        horizontal-stretch: 1;
-                        height: 36px;
-                        background: #252f40;
-                        border-width: 1px;
-                        border-color: #39475b;
-                        border-radius: 6px;
-                        HorizontalLayout {
-                            padding: 10px;
-                            Text { text: "Standardmikrofon auswählen"; color: #d7deea; vertical-alignment: center; }
-                            Text { text: "⌄"; color: #9aa8bb; vertical-alignment: center; }
-                        }
-                    }
+                    Text { text: "Ordnerauswahl folgt"; color: #8491a5; vertical-alignment: center; }
                 }
-                Text { text: "Aufnahmen bleiben lokal auf diesem Gerät."; color: #8491a5; font-size: 11px; }
-            }
-        }
-        Rectangle {
-            background: #1a2230;
-            border-radius: 12px;
-            height: 48px;
-            HorizontalLayout {
-                padding: 14px;
-                spacing: 8px;
-                Text { text: "OK"; color: #69d69a; vertical-alignment: center; }
-                Text { text: root.status-message; color: #c4cedd; vertical-alignment: center; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button {
+                        text: "Temporäre Dateien prüfen";
+                        width: 190px;
+                        clicked => { root.scan-recovery(); }
+                    }
+                    Text { text: root.recovery-message; color: #9aa8bb; vertical-alignment: center; overflow: elide; }
+                }
+                Text {
+                    text: "Mikrofon-Auswahl und Audioaufnahme sind noch nicht integriert.";
+                    color: #9aa8bb;
+                    font-size: 11px;
+                }
             }
         }
         VerticalLayout {
             alignment: end;
-            Button {
-                text: "Aufnahme vorbereiten";
-                primary: true;
-                clicked => { root.start-recording(); }
-            }
+            Button { text: "Aufnahme vorbereiten"; enabled: false; primary: true; }
+            Text { text: root.status-message; color: #9aa8bb; font-size: 11px; }
         }
     }
 }

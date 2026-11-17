@@ -1339,6 +1339,7 @@ name = "framelet-desktop"
 version = "0.1.0"
 dependencies = [
  "framelet-core",
+ "framelet-storage",
  "slint",
  "slint-build",
  "slint-snapshot",

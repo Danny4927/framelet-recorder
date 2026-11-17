@@ -158,12 +158,12 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
 | Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska; bounded producer/worker queue, counted video drops, fatal audio overload, queue metrics, EOS, filesink-error and timeout tests exist; no production adapter, independent playback proof, sustained-load validation, or hardware benchmark evidence |
-| Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery; no production media writer or composition yet |
+| Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery. Desktop composition validates the default output directory and exposes orphan scans; no production media writer or native directory picker yet |
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
 
-The following sequences describe the target interaction across the granular ports. In the current implementation, the use-case service is exercised with a fakeable `RecordingResources` facade. The `framelet-storage` filesystem adapter now exists behind `RecordingStoragePort`, but concrete screen/camera/microphone/media/storage adapters and the desktop composition root are not yet wired. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
+The following sequences describe the target interaction across the granular ports. In the current implementation, the use-case service is exercised with a fakeable `RecordingResources` facade. The `framelet-storage` filesystem adapter exists behind `RecordingStoragePort` and is now used by the desktop composition root for output-directory validation and recovery scans. Concrete screen/camera/microphone/media adapters and native output-directory selection are not yet wired. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
 
 ### 6.1 Prepare and start
 
@@ -254,7 +254,7 @@ Typed errors cross module boundaries and become actionable UI messages. Preserve
 
 ### Testing
 
-Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery; platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
+Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery. The desktop shell reports the default output path and orphan count without deleting files. Native directory selection, platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
 
 ## 9. Architecture Decisions
 

@@ -63,6 +63,14 @@ cargo run --manifest-path poc/microphone-cpal/Cargo.toml -- --record --device 0 
 
 The first microphone milestone accepts only the default F32 input format, keeps data in a fixed two-second ring, reports received sample frames and overrun count, and discards samples on exit. It does not create an audio file.
 
+## Desktop storage/recovery UI smoke test (Linux and Windows)
+
+Build and run the application, confirm the default output directory is displayed, and press **Temporäre Dateien prüfen**. Create a test file matching `.framelet-pending-test.part` in that directory and scan again; the reported count should increase. Verify the file remains unchanged. Native folder selection and recording preparation are currently unavailable because no dialog adapter or production media backend has been approved. Record real-device results separately; hosted CI is not a device test.
+
+```bash
+cargo run -p framelet-desktop
+```
+
 ## Required real-device matrix
 
 | Scenario | Expected result | Result |

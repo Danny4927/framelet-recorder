@@ -32,3 +32,8 @@ snapshots for selected modes, camera preview, recording, paused, and error state
 
 For intentional UI changes, render a candidate, inspect it, then explicitly accept it with
 `SLINT_SNAPSHOT_MODE=accept`. Never accept a changed reference without reviewing the PNG.
+
+
+## Baseline update status for the storage/recovery UI
+
+The storage/recovery UI changes intentionally alter the default window, so the checked-in default PNG must be regenerated with `SLINT_SNAPSHOT_MODE=accept` and reviewed before the visual regression gate can pass. CI uploads the generated expected, actual, and diff images as the `slint-visual-regression` artifact, including when verification fails. Inspect the actual image before updating the checked-in baseline. Do not switch CI to accept mode or weaken verification.
