@@ -1,10 +1,10 @@
 #![forbid(unsafe_code)]
 //! Minimal local WAV writer for bounded PCM capture PoCs.
 
+use framelet_capture_api::AudioBlock;
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use framelet_capture_api::AudioBlock;
 
 const MAX_DATA_BYTES: u64 = u32::MAX as u64 - 36;
 
