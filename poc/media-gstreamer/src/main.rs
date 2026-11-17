@@ -285,13 +285,16 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
     let producer_result = producer_worker
         .join()
         .map_err(|_| anyhow::anyhow!("synthetic media producer panicked"))?;
+    let metrics = metrics_handle.metrics();
+    // Release the final sender clone so the worker can observe producer failure
+    // as channel closure instead of waiting indefinitely for a terminal marker.
+    drop(metrics_handle);
     let consumer_result = consumer_worker
         .join()
         .map_err(|_| anyhow::anyhow!("media pipeline worker panicked"))?;
     consumer_result?;
     producer_result?;
 
-    let metrics = metrics_handle.metrics();
     println!(
         "Media queue: capacity={}, high-water={}, accepted={}, rejected={}",
         metrics.capacity, metrics.high_watermark, metrics.accepted, metrics.rejected
