@@ -60,7 +60,9 @@ pub struct MediaConsumer<T> {
     metrics: Arc<Metrics>,
 }
 
-pub fn bounded<T>(capacity: usize) -> Result<(MediaProducer<T>, MediaConsumer<T>), InvalidCapacity> {
+pub fn bounded<T>(
+    capacity: usize,
+) -> Result<(MediaProducer<T>, MediaConsumer<T>), InvalidCapacity> {
     if capacity == 0 {
         return Err(InvalidCapacity);
     }
