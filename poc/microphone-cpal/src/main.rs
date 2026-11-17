@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use cpal::traits::{HostTrait, StreamTrait};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use framelet_capture_api::{SourceDescriptor, SourceId, SourceKind};
 
@@ -98,7 +98,10 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
         .and_then(|samples| samples.checked_mul(RING_SECONDS))
         .ok_or("ring capacity overflow")?;
 
-    let ring = Arc::new(AudioSampleRing::new(ring_capacity)?);
+    let ring = Arc::new(
+        AudioSampleRing::new(ring_capacity)
+            .map_err(|error| format!("unable to allocate audio ring: {error:?}"))?,
+    );
     let callback_failed = Arc::new(AtomicBool::new(false));
     let callback_error = Arc::clone(&callback_failed);
     let config: StreamConfig = supported.into();
