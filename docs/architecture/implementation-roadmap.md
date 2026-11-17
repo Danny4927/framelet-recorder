@@ -26,7 +26,7 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
 | 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
 | 2 | Media pipeline evaluation and backend decision | In progress — initial isolated GStreamer spike merged in PR #14; validation slice in progress | 0, 1 (port requirements) |
-| 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
+| 3 | Transactional local storage adapter and recovery contract | In progress — filesystem adapter slice in PR | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
 | 6 | Camera adapter and screen + camera composition | Planned | 1, 2, 5 |
@@ -105,16 +105,21 @@ Exit criteria:
 
 ## Phase 3 — Transactional local storage
 
+**Current slice:** the filesystem adapter is introduced in PR for `RecordingStoragePort`; see [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md) and `crates/storage/README.md`. The adapter is not yet wired into the desktop composition root.
+
 Deliverables:
-- Storage port and filesystem adapter for exclusive temporary output, collision-safe destination naming, flush/close, atomic publication where supported, and recovery metadata.
+- Storage port and filesystem adapter for exclusive temporary output, collision-safe destination naming, flush/close, no-replace publication, and recovery discovery.
 - Explicit behavior for disk full, permission errors, path invalidation, process interruption, and existing files.
 - No overwrite by default; no success before finalization and close.
+- Media writer integration and composition remain blocked on a production media decision and are not claimed by this slice.
 
 Exit criteria:
-- [ ] Fault-injected tests cover write, flush, close, rename/publication, and disk-full failures.
-- [ ] Existing recordings are never silently overwritten.
-- [ ] Recovery behavior is documented and tested.
-- [ ] Core depends only on the storage port.
+- [ ] Fault-injected tests cover write, flush, close, publication, and disk-full failures on supported filesystems.
+- [x] Existing recordings are never silently overwritten by the adapter's no-replace publication strategy.
+- [x] Recovery discovery reports orphaned candidates without destructive cleanup.
+- [x] Core depends only on the storage port; the adapter depends inward on core.
+- [ ] Desktop/media integration and closed-writer hand-off are verified.
+- [ ] Filesystem durability and real power-loss recovery are validated on supported OS/filesystems.
 
 ## Phase 4 — Production microphone adapter
 
