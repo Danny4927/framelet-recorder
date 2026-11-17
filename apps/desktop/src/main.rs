@@ -3,9 +3,7 @@
 
 slint::include_modules!();
 
-use std::cell::RefCell;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use framelet_storage::FileSystemRecordingStorage;
 
@@ -52,10 +50,10 @@ fn main() -> Result<(), slint::PlatformError> {
     #[cfg(windows)]
     apply_native_title_bar(&window);
 
-    let output_directory = Rc::new(RefCell::new(default_output_directory()));
-    match FileSystemRecordingStorage::new(output_directory.borrow().clone()) {
+    let output_directory = default_output_directory();
+    match FileSystemRecordingStorage::new(output_directory.clone()) {
         Ok(storage) => {
-            window.set_output_directory(display_path(&output_directory.borrow()).into());
+            window.set_output_directory(display_path(&output_directory).into());
             let count = storage.find_orphaned_temporary_files().map(|files| files.len()).unwrap_or(0);
             window.set_recovery_message(format!("{count} temporäre Datei(en) gefunden").into());
             if count > 0 {
@@ -71,19 +69,11 @@ fn main() -> Result<(), slint::PlatformError> {
     }
 
     {
-        let weak = window.as_weak();
-        window.on_choose_output_directory(move || {
-            if let Some(window) = weak.upgrade() {
-                window.set_status_message("Ordnerauswahl ist noch nicht implementiert.".into());
-            }
-        });
-    }
-    {
-        let directory = Rc::clone(&output_directory);
+        let directory = output_directory.clone();
         let weak = window.as_weak();
         window.on_scan_recovery(move || {
             if let Some(window) = weak.upgrade() {
-                match FileSystemRecordingStorage::new(directory.borrow().clone())
+                match FileSystemRecordingStorage::new(directory.clone())
                     .and_then(|storage| storage.find_orphaned_temporary_files())
                 {
                     Ok(files) => {
