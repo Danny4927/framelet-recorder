@@ -10,3 +10,6 @@ publish = false
 [dependencies]
 cpal = { version = "=0.18.2", default-features = false, features = ["pipewire", "alsa"] }
 framelet-capture-api = { path = "../../crates/capture-api" }
+
+[dev-dependencies]
+loom = "0.7"
