@@ -24,8 +24,8 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 | Phase | Scope | Status | Depends on |
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
-| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented in PR #13 (CI/review pending) | 0 |
-| 2 | Media pipeline evaluation and backend decision | Planned | 0, 1 (port requirements) |
+| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
+| 2 | Media pipeline evaluation and backend decision | In progress — isolated GStreamer PoC, PR pending | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
@@ -78,18 +78,20 @@ Exit criteria:
 
 ## Phase 2 — Media pipeline evaluation and decision
 
+**Current work:** PR for the isolated GStreamer appsrc spike and ADR-0013. GStreamer is an evaluation candidate only; ADR-0004 remains the authority that production selection is deferred.
+
 Deliverables:
 - Compare viable media runtimes and/or libraries against Windows/Linux support, Rust integration, codecs/containers, plugin footprint, safe API availability, latency, memory, licensing, packaging, and offline operation.
-- Build a narrow isolated PoC that accepts timestamped owned audio/video blocks, encodes/muxes a local file, and finalizes deterministically.
+- Build a narrow isolated PoC that accepts timestamped owned audio/video blocks, encodes/muxes a local file, and finalizes deterministically. The first synthetic VP8/Vorbis-to-Matroska spike is not the final product format.
 - Measure startup, CPU/RSS, queue occupancy, A/V sync, stop-to-finalize latency, and failure recovery.
-- Record the selected approach (or continued deferral) in an ADR. Do not let the candidate runtime leak through core ports.
+- Compare GStreamer with FFmpeg-based Rust bindings and viable pure-Rust media stacks; record the selected approach (or continued deferral) in a superseding ADR. Do not let the candidate runtime leak through core ports.
 
 Exit criteria:
-- [ ] Representative sample recordings play in independent players on each tested OS.
-- [ ] Finalization and injected failure tests pass.
+- [ ] Representative sample recordings play in at least two independent players on each tested OS.\n- [ ] Output target formats are validated separately; diagnostic Matroska/VP8/Vorbis does not approve MP4/H.264/AAC.
+- [ ] Finalization and injected failure tests pass, including EOS, encoder/sink errors, timeout and interruption behavior.\n- [ ] Bounded producer queues, explicit backpressure, audio-gap handling and control-path independence are verified.
 - [ ] Dependency/native plugin inventory and redistribution licenses are reviewed.
 - [ ] No unsafe code is introduced into first-party crates.
-- [ ] Selection/defer decision is recorded in an ADR and arc42 sections 5, 7, 8, 11 updated.
+- [ ] Selection/defer decision is recorded in an ADR and arc42 sections 5, 7, 8, 11 updated.\n- [ ] Measured CPU, process RSS, startup, throughput, queue high-water marks, A/V drift and stop-to-finalize latency are recorded with hardware/software context.
 
 ## Phase 3 — Transactional local storage
 
