@@ -3,20 +3,21 @@
 **Status:** Binding delivery plan  
 **Last updated:** 17 November 2026  
 **Architecture authority:** [arc42](arc42.md), [ADR index](adr/README.md)  
-**Mandatory implementation style:** hexagonal architecture (ports and adapters), safe Rust, local-first operation.
+**Mandatory implementation style:** Domain-Driven Design (DDD) inside the application core, hexagonal architecture (ports and adapters), safe Rust, local-first operation.
 
 This roadmap defines the intended implementation order, dependencies, deliverables, and exit criteria. A phase is not complete merely because code compiles: its architectural, behavioral, test, and documentation gates must also pass. Re-plan through an ADR when evidence requires a structural change.
 
 ## Delivery rules applying to every phase
 
-1. Keep all application use cases and domain/application contracts in the core. Define ports in application-owned code.
-2. Implement platform, UI, media, and storage integrations as adapters. The desktop executable is the only composition root and injects adapter implementations.
-3. Core must not depend on Slint, CPAL, PipeWire, OS APIs, codecs, muxers, or filesystem implementation types. No adapter-to-adapter coupling.
-4. No first-party `unsafe`, raw pointers, custom FFI, unbounded media queues, or blocking UI/audio callbacks.
-5. Translate external types/errors at adapter boundaries. Use typed errors and owned data across asynchronous boundaries.
-6. Test core use cases with fakes; adapter contracts independently; platform behavior on real supported OS/device combinations.
-7. Update the relevant arc42 sections and add an ADR for significant decisions in the same PR.
-8. Do not claim a platform, mode, or backend as supported until its real-device and packaging gates pass.
+1. Keep the domain model, ubiquitous language, invariants, and application use cases in the core. Define ports in application-owned code.
+2. Apply DDD pragmatically: identify entities/value objects and aggregate boundaries from real invariants; keep domain logic framework-free; introduce domain events and bounded contexts only when justified.
+3. Implement platform, UI, media, and storage integrations as adapters. The desktop executable is the only composition root and injects adapter implementations.
+4. Core must not depend on Slint, CPAL, PipeWire, OS APIs, codecs, muxers, or filesystem implementation types. No adapter-to-adapter coupling.
+5. No first-party `unsafe`, raw pointers, custom FFI, unbounded media queues, or blocking UI/audio callbacks.
+6. Translate external types/errors at adapter boundaries. Use typed errors and owned data across asynchronous boundaries.
+7. Test domain invariants and aggregate behavior directly; test core use cases with fakes; adapter contracts independently; platform behavior on real supported OS/device combinations.
+8. Update the relevant arc42 sections and add an ADR for significant decisions in the same PR.
+9. Do not claim a platform, mode, or backend as supported until its real-device and packaging gates pass.
 
 ## Phase overview
 
@@ -42,7 +43,7 @@ Deliverables:
 - Backend-neutral owned audio/video data contracts and validation.
 - Bounded worker-level audio block FIFO with explicit full-queue rejection.
 - Callback/worker separation: callback-facing preallocated SPSC ring remains separate.
-- Binding hexagonal architecture rules and arc42 documentation policy.
+- Binding hexagonal architecture and DDD rules, ubiquitous language, initial Recording bounded context, and arc42 documentation policy.
 - This implementation roadmap and ADR trail.
 
 Exit criteria:
@@ -50,7 +51,8 @@ Exit criteria:
 - [ ] Unit tests cover block validation, queue bounds, FIFO behavior, format mismatch, and overflow accounting.
 - [ ] No first-party unsafe code or new unreviewed dependencies.
 - [ ] All 12 arc42 sections remain present and current.
-- [ ] Contributor instructions enforce ports-and-adapters for every feature.
+- [ ] Contributor instructions enforce ports-and-adapters and DDD for every feature.
+- [ ] Domain vocabulary and initial Recording model are documented; domain invariants remain independent of adapters.
 
 ## Phase 1 — Core use cases and ports
 
