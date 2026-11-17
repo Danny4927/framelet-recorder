@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.4 — bounded worker-level audio transport  
+**Version:** 0.6 — Phase 1 core ports and orchestration  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, and core-owned source, media, storage, clock, settings, repository, event, and metrics ports. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -71,14 +71,17 @@ Domain-Driven Design complements the hexagonal architecture: the domain model an
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
 2. Hexagonal architecture: all inbound and outbound interactions cross application-owned ports; concrete adapters depend inward on core-owned contracts. This is mandatory for every production feature, not only OS capture.
 3. Core-owned lifecycle: one authority coordinates prepare, record, pause, resume, stop, cancel, and finalize.
-4. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
-5. One monotonic media timeline with a common recording origin.
-6. Local transactional output: exclusive temporary file, successful finalization, then collision-safe publication.
-7. Fail visibly: count video drops; detect/report audio loss, disconnects, and finalization errors.
-8. Safe Rust boundary; third-party unsafe internals are reviewed risks.
-9. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
+4. Granular outbound contracts: screen, camera, microphone, media, storage, monotonic clock, settings, session metadata, events, and metrics are separate core-owned ports.
+5. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
+6. One monotonic media timeline with a common recording origin.
+7. Local transactional output: exclusive temporary file, successful finalization, then collision-safe publication.
+8. Fail visibly: count video drops; detect/report audio loss, disconnects, and finalization errors.
+9. Safe Rust boundary; third-party unsafe internals are reviewed risks.
+10. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
 
 ## 5. Building Block View
+
+The Phase 1 core defines `RecordingSession` as the initial aggregate, `RecordingConfiguration` and `RecordingArtifact` as validated value concepts, and `RecordingId` as session identity. `RecordingUseCases` is the inbound application port. `ports.rs` defines source-specific screen, camera, and microphone contracts plus media pipeline, storage, monotonic clock, settings, session metadata repository, event publisher, and metrics snapshot contracts. Native types are translated at adapter boundaries; media payloads cross the boundary as owned `AudioBlock` and `VideoFrame` values from `capture-api`. The `RecordingResources` facade is retained for the initial application-service implementation; future composition can inject the granular adapters without changing domain types. The repository contract stores session metadata only; transactional media-file publication is implemented in Phase 3. Event publication is typed and observer-facing; high-frequency updates must be coalesced and must never run on real-time callbacks.
 
 The detailed backend-neutral media boundary is specified in [Capture and media contracts](capture-and-media-contracts.md). It defines source identity/capabilities, owned video/audio blocks, validation, clock mapping, events/errors, bounded transport, and cancellation.
 
@@ -116,11 +119,11 @@ Create crates only when real code justifies a boundary. No empty placeholder mem
 
 ### 5.3 Hexagonal architecture and dependency rule (binding)
 
-The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities.
+The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities. The Phase 1 CI workflow runs `scripts/check-architecture.py` to reject new direct core dependencies outside the backend-neutral capture contract and to detect imports of known UI/native runtime APIs.
 
 - **Inbound ports:** typed use-case APIs such as PrepareRecording, StartRecording, PauseRecording, ResumeRecording, StopRecording, CancelRecording, and query/state subscriptions.
 - **Inbound adapters:** Slint UI event handlers and future command/automation entry points. They translate external input into inbound-port calls and render returned state/events; they contain no business rules.
-- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, clock, and platform capabilities.
+- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, monotonic clock, session metadata, event publication, and metrics snapshots.
 - **Outbound adapters:** concrete OS/capture, CPAL or future audio backend, camera, media runtime, filesystem, and settings implementations.
 - **Composition root:** constructs adapters and injects them into core use cases. It is the only place allowed to know concrete adapter types.
 
@@ -156,7 +159,7 @@ DDD is the required modeling approach for Framelet's application domain. It work
 **Modeling rules:**
 - Put domain concepts and invariants in `crates/core` (or a clearly separated domain module within the core); keep `capture-api` focused on transport/interoperability contracts rather than becoming a second domain model.
 - Use entities for identity-bearing lifecycle concepts, value objects for validated immutable concepts (for example source identity, recording configuration, media time, and output destination), and aggregates only where a consistency boundary and invariants require them.
-- The recording session is the initial aggregate candidate: its root owns legal lifecycle transitions and invariants such as idempotent stop/cancel semantics and finalization outcome. Confirm or revise this boundary during Phase 1 based on concrete use cases; do not force all devices/media buffers into this aggregate.
+- The recording session is the initial aggregate: its root owns legal lifecycle transitions and invariants such as cancellation semantics and finalization outcome. Device handles and media buffers remain outside the aggregate.
 - Application use cases coordinate domain objects and ports. Adapters own device/codec/filesystem mechanics and map native/persisted types to application-owned contracts.
 - Domain events represent meaningful facts (for example recording started, source lost, audio gap detected, recording finalized); transport notifications are not automatically domain events.
 - Do not introduce repositories, domain services, specifications, factories, or event buses unless a concrete invariant or use case needs them. Persistence abstractions belong at the application port boundary.
@@ -172,12 +175,14 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
-| core | Mode enum and transition predicate; orchestration incomplete |
+| core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
 | Media pipeline/compositing/encoding | Not implemented |
 | Storage/recovery | Not implemented |
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
+
+The following sequences describe the target interaction across the granular ports. In the Phase 1 implementation, the use-case service is exercised with a fakeable `RecordingResources` facade; concrete screen/camera/microphone/media/storage adapters and the desktop composition root are deliberately not wired yet. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
 
 ### 6.1 Prepare and start
 
@@ -302,6 +307,8 @@ See [ADR index](adr/README.md).
 | Q-07 | 60-minute recording | Bounded memory and stable timestamps/sync | Long-run device test |
 | Q-08 | Offline operation | Recording remains usable; no network attempted | Offline/network observation |
 | Q-09 | High-rate metrics | UI responsive; metrics coalesced | UI load test |
+| Q-10 | Resource finalization fails | Session becomes Failed and never exposes a completed artifact | Fake-port application test |
+| Q-11 | Illegal lifecycle command | Core rejects the command without invoking the external resource port | Aggregate/application unit test |
 
 SPECIFICATION.md contains performance targets. Publish measurements only with hardware, OS, backend, resolution, frame rate, codecs, duration, and encoder mode.
 
