@@ -40,6 +40,10 @@ cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start --frames 120
 
 FPS is the process-side receive rate, sequence gaps are best-effort diagnostics, and frame-byte totals are throughput rather than process RSS. This PoC still does not write media, so it does not prove encoding or recording.
 
+## Microphone milestone 3 — bounded WAV output and CLI validation
+
+The isolated CPAL PoC persists drained AudioBlocks as 32-bit IEEE-float PCM WAV. The writer creates the final path with `create_new`, validates sample rate/channel consistency and RIFF size, then patches and syncs the header only after a clean stop and final drain. Automatic output names are candidates; exclusive writer creation is the atomic collision check. CLI regression tests cover default/positive/zero/invalid duration and missing/empty/explicit output paths. Runtime backend failures and ring overflow continue to fail without finalizing a recording. CI does not imply a real microphone device run.
+
 ## Microphone milestone 2 — continuous bounded AudioBlock delivery
 
 The CPAL PoC now drains the SPSC ring continuously while the stream is running instead of waiting until capture ends. It copies each drained chunk into an owned `framelet_capture_api::AudioBlock` with sample rate, channel count, a monotonic capture-relative timestamp, and a first-sample position. The consumer uses a fixed-size scratch buffer and discards each block at the PoC sink, so memory use is bounded independently of recording duration. Stream callback errors are surfaced after the stream is stopped and the remaining buffered samples are drained.
@@ -55,7 +59,7 @@ The standalone `poc/microphone-cpal` package is outside the production workspace
 - Only a default F32 input format is accepted for this first milestone. Other formats fail explicitly rather than being silently converted.
 - The callback copies into a preallocated two-second SPSC sample ring. It does not allocate, lock, sleep, log, send a channel message, or perform filesystem/network I/O.
 - Samples that do not fit are counted and dropped; the consumer never has unread samples overwritten.
-- The stream is explicitly started with CPAL's `.play()` call. A consumer drains the ring every 10 ms into bounded, owned `AudioBlock` chunks while capture is active; the final buffered chunk is drained after stream shutdown. Blocks are currently discarded by the PoC sink. **No audio file is created.**
+- The stream is explicitly started with CPAL's `.play()` call. A consumer drains the ring every 10 ms into bounded, owned `AudioBlock` chunks while capture is active; the final buffered chunk is drained after stream shutdown. Milestone 3 sends these blocks to an exclusive WAV writer, finalized only after a clean capture.
 
 Run from the repository root:
 
@@ -75,7 +79,7 @@ The device index is local to the current enumeration and is not a persistent dev
 - `lamco-pipewire` contains third-party unsafe/FFI code and takes ownership of a raw FD; see [ADR-0007](architecture/adr/ADR-0007-lamco-pipewire-frame-delivery.md).
 - The CPAL input stream uses a safe public Rust API, but platform backends may include third-party unsafe/FFI internals; see [ADR-0008](architecture/adr/ADR-0008-cpal-microphone-capture.md).
 - The PipeWire and microphone PoCs use bounded buffering. Exact native dependency/runtime requirements and measured device behavior remain platform gates.
-- Exact crate versions are pinned in standalone manifests. Committed lockfiles, RustSec, license/source, transitive dependency, and native/unsafe review remain required before production consideration.
+- Exact crate versions are pinned in standalone manifests. The standalone lockfile, RustSec and license/source, transitive dependency, and native/unsafe review remain required before production consideration.
 - CI compile/tests do not validate actual compositor or microphone device behavior.
 
 ## Remaining real-device evidence

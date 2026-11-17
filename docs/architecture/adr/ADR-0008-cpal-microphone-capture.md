@@ -18,8 +18,9 @@ The PoC is intentionally narrow:
 3. Accept only the device's default F32 configuration for this milestone.
 4. Copy callback samples into a preallocated two-second SPSC ring buffer.
 5. Count overflowed samples; never block the callback or overwrite unread samples.
-6. Stop after a bounded duration (ten seconds by default), report sample/drop counts, then discard the in-memory samples.
-7. Do not write audio files or add CPAL to the production workspace.
+6. Stop after a bounded duration (ten seconds by default), continuously drain owned AudioBlocks, and persist them in a local 32-bit float PCM WAV file.
+7. Create output exclusively, reject size/format mismatches, and finalize header sizes only after a clean stop and final drain; never overwrite an existing path.
+8. Keep CPAL outside the production workspace.
 
 The exact CPAL version is pinned. CPAL is licensed under Apache-2.0 and exposes safe Rust input-stream APIs, but its platform backends include native/FFI and third-party unsafe internals. The stream is explicitly started with `.play()`; stream construction alone is not treated as capture start.
 
@@ -33,8 +34,8 @@ The exact CPAL version is pinned. CPAL is licensed under Apache-2.0 and exposes 
 ## Consequences
 
 - The PoC can prove device enumeration and sample delivery on the tested host without claiming a supported product backend.
-- Only F32 default input configurations are covered; other sample formats, resampling, timestamps, A/V sync, pause/resume, and file output remain open.
-- The ring buffer uses fixed memory and reports overflow. A downstream consumer must drain it at an appropriate rate; this PoC intentionally does not add an unbounded queue.
+- Only F32 default input configurations and float PCM WAV output are covered; other sample formats, resampling, hardware-clock timestamps, A/V sync, pause/resume, and crash recovery remain open.
+- The ring buffer uses fixed memory and reports overflow. The WAV writer runs on the consumer thread, not in the CPAL callback; overflow and callback errors prevent a recording from being finalized.
 - Linux builds require PipeWire development headers for the enabled PipeWire feature. CPAL also includes its ALSA backend as a target-specific dependency; ALSA development headers are installed in CI. Windows WASAPI behavior still requires device testing.
 - The dependency graph is not claimed to be unsafe-free. RustSec, transitive dependency, exact source/unsafe boundary, license/redistribution, and native packaging checks remain mandatory gates.
 

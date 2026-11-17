@@ -15,7 +15,7 @@ Recording requires explicit \`--record --device INDEX\`. The index is local to t
 
 The PoC writes 32-bit IEEE-float PCM WAV files. Pass \`--output PATH\` to choose the destination; otherwise it generates a timestamped \`framelet-recording-*.wav\` in the current directory.
 
-- Files are created exclusively; existing recordings are never overwritten.
+- Files are created exclusively by the WAV writer; existing recordings are never overwritten. Automatic names are candidates only, and exclusive creation is the final collision check.
 - The fixed-size ring is drained continuously into AudioBlocks, then written on the consumer thread.
 - The WAV header is patched only after capture stops, remaining samples are drained, and no overflow or callback error occurred.
 - A completed path is printed only after flush and sync succeed.
