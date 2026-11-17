@@ -431,6 +431,9 @@ mod integration_tests {
         let _ = std::fs::remove_file(&output);
 
         assert!(result.is_err(), "missing EOS must fail finalization");
-        assert!(elapsed < Duration::from_secs(2), "timeout should be bounded");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "timeout should be bounded"
+        );
     }
 }
