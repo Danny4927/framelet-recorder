@@ -232,7 +232,12 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
             }
             // Video uses drop-newest when overloaded. The counter makes every
             // dropped frame observable; this PoC's synthetic run reports it.
-            let _ = producer.try_push(MediaPacket::Video(buffer));
+            match producer.try_push(MediaPacket::Video(buffer)) {
+                Ok(()) | Err(media_queue::QueueSendError::Full(_)) => {}
+                Err(media_queue::QueueSendError::Disconnected(_)) => {
+                    bail!("media pipeline worker disconnected while sending video");
+                }
+            }
 
             if sequence % 3 == 0 {
                 let samples_per_channel = (SAMPLE_RATE / FRAME_RATE) * 3;
@@ -275,7 +280,10 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
         loop {
             match producer.try_push(MediaPacket::End) {
                 Ok(()) => break,
-                Err(MediaPacket::End) => thread::yield_now(),
+                Err(media_queue::QueueSendError::Full(MediaPacket::End)) => thread::yield_now(),
+                Err(media_queue::QueueSendError::Disconnected(MediaPacket::End)) => {
+                    bail!("media pipeline worker disconnected before finalization");
+                }
                 Err(_) => unreachable!("only the terminal marker is sent here"),
             }
         }
