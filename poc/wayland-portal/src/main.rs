@@ -9,12 +9,10 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use framelet_capture_api::{
-    PixelFormat as FrameletPixelFormat, VideoFrame as FrameletVideoFrame,
-    VideoFrameMetadata,
+    PixelFormat as FrameletPixelFormat, VideoFrame as FrameletVideoFrame, VideoFrameMetadata,
 };
 use lamco_pipewire::{
-    PipeWireThreadCommand, PipeWireThreadManager, PixelFormat as PipeWirePixelFormat,
-    StreamConfig,
+    PipeWireThreadCommand, PipeWireThreadManager, PixelFormat as PipeWirePixelFormat, StreamConfig,
 };
 use lamco_wayland::prelude::*;
 
@@ -54,7 +52,11 @@ impl CaptureStats {
             && frame.metadata.sequence > previous.saturating_add(1)
         {
             self.sequence_gaps = self.sequence_gaps.saturating_add(
-                frame.metadata.sequence.saturating_sub(previous).saturating_sub(1),
+                frame
+                    .metadata
+                    .sequence
+                    .saturating_sub(previous)
+                    .saturating_sub(1),
             );
         }
         self.last_sequence = Some(frame.metadata.sequence);
@@ -137,7 +139,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!(
         "PipeWire stream connected. Waiting for frames (duration: {:.0}s, frame target: {}).",
         options.duration.as_secs_f64(),
-        options.frame_limit.map_or_else(|| "none".to_owned(), |n| n.to_string()),
+        options
+            .frame_limit
+            .map_or_else(|| "none".to_owned(), |n| n.to_string()),
     );
 
     let started = Instant::now();
@@ -148,7 +152,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if elapsed >= options.duration {
             break StopReason::DurationReached;
         }
-        if options.frame_limit.is_some_and(|limit| stats.received >= limit) {
+        if options
+            .frame_limit
+            .is_some_and(|limit| stats.received >= limit)
+        {
             break StopReason::FrameTargetReached;
         }
 
@@ -182,7 +189,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         if last_report.elapsed() >= REPORT_INTERVAL {
-            stats.report(started.elapsed(), pipewire.corrupted_buffer_count(), "Progress");
+            stats.report(
+                started.elapsed(),
+                pipewire.corrupted_buffer_count(),
+                "Progress",
+            );
             last_report = Instant::now();
         }
     };
@@ -207,10 +218,9 @@ fn shutdown_with_error(
     drop(session);
     match shutdown_result {
         Ok(()) => Err(message.into()),
-        Err(shutdown_error) => Err(format!(
-            "{message} PipeWire shutdown also failed: {shutdown_error}"
-        )
-        .into()),
+        Err(shutdown_error) => {
+            Err(format!("{message} PipeWire shutdown also failed: {shutdown_error}").into())
+        }
     }
 }
 
@@ -249,9 +259,7 @@ fn parse_positive_option(
     Ok(Some(parsed))
 }
 
-fn convert_frame(
-    frame: lamco_pipewire::VideoFrame,
-) -> Result<FrameletVideoFrame, String> {
+fn convert_frame(frame: lamco_pipewire::VideoFrame) -> Result<FrameletVideoFrame, String> {
     if frame.is_dmabuf() {
         return Err("DMA-BUF frame received although CPU buffers were requested".to_owned());
     }
@@ -396,8 +404,8 @@ mod tests {
 
     #[test]
     fn parses_defaults() {
-        let parsed = parse_options(&["poc".to_owned(), "--start".to_owned()])
-            .expect("valid defaults");
+        let parsed =
+            parse_options(&["poc".to_owned(), "--start".to_owned()]).expect("valid defaults");
         assert_eq!(parsed.frame_limit, None);
         assert_eq!(parsed.duration, Duration::from_secs(600));
     }
@@ -458,8 +466,7 @@ mod tests {
     fn row_padding_is_preserved() {
         let source = [1, 2, 3, 4, 5, 6, 7, 8, 9, 9, 9, 9];
         let mut destination = [0_u8; 12];
-        copy_bgrx_to_bgra(&source, &mut destination, 2, 1, 12)
-            .expect("valid padded frame");
+        copy_bgrx_to_bgra(&source, &mut destination, 2, 1, 12).expect("valid padded frame");
         assert_eq!(destination, [1, 2, 3, 255, 5, 6, 7, 255, 0, 0, 0, 0]);
     }
 
