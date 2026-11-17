@@ -170,6 +170,10 @@ Device-supported formats take precedence. The app must never claim a setting is 
 
 ---
 
+### 4.6 Incremental product delivery
+
+Features must become testable through the running desktop application as soon as a vertical slice is complete. Do not defer all UI wiring to the end of the project. A UI control must invoke a real implemented use case or be visibly unavailable with an explanation; decorative controls and simulated success states are not acceptable. For every capability, distinguish implementation, automated test coverage, UI integration, and real-device validation. Each increment must include a short manual test procedure and preserve already-working UI flows.
+
 ## 5. Architecture
 
 Use a modular Rust workspace and a Rust-first application core. No backend or services.
