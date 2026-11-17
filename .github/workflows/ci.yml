@@ -25,6 +25,14 @@ jobs:
       - name: Enforce hexagonal core dependency boundary
         run: python scripts/check-architecture.py
       - run: cargo fmt --all -- --check
+      - name: Resolve workspace dependencies and refresh lockfile
+        run: cargo check --workspace
+      - name: Upload regenerated lockfile for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: Check isolated GStreamer media PoC
