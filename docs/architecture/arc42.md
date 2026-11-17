@@ -1,6 +1,6 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.11 — Phase 2 media pipeline validation slice  
+**Version:** 0.12 — Native Windows title-bar styling  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
@@ -152,7 +152,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 
 | Area | Status |
 |---|---|
-| Slint shell | Present; scaffold only |
+| Slint shell | Present; Windows native title bar is tinted to Framelet dark colors through the safe Winit Windows extension API; native decorations remain enabled |
 | capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
@@ -223,7 +223,7 @@ Pause is coordinated across sources and pipeline. The core records monotonic pau
 
 One installed desktop process; no daemon or helper service. The isolated media evaluation currently requires a separately installed GStreamer runtime and plugins; this native dependency is intentionally excluded from production application packages.
 
-- Windows: executable plus explicitly packaged and reviewed runtime dependencies.
+- Windows: executable plus explicitly packaged and reviewed runtime dependencies. The native title bar and caption buttons remain OS-owned; on Windows 11 build 22000+, the desktop shell sets title background, title text, and border colors through Winit. Older Windows versions retain the system title-bar appearance.
 - Linux Wayland: executable plus documented portal/PipeWire integration and runtime dependencies.
 - Linux X11: separate adapter/package validation; no implied Wayland parity.
 - Output and settings stay in user-owned local directories.
