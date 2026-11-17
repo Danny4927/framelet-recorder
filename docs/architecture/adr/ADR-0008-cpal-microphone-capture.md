@@ -35,7 +35,7 @@ The exact CPAL version is pinned. CPAL is licensed under Apache-2.0 and exposes 
 - The PoC can prove device enumeration and sample delivery on the tested host without claiming a supported product backend.
 - Only F32 default input configurations are covered; other sample formats, resampling, timestamps, A/V sync, pause/resume, and file output remain open.
 - The ring buffer uses fixed memory and reports overflow. A downstream consumer must drain it at an appropriate rate; this PoC intentionally does not add an unbounded queue.
-- Linux builds require both PipeWire and ALSA development libraries for the selected feature set. Windows WASAPI behavior still requires device testing.
+- Linux builds require PipeWire development headers for the enabled PipeWire feature. CPAL also includes its ALSA backend as a target-specific dependency; ALSA development headers are installed in CI. Windows WASAPI behavior still requires device testing.
 - The dependency graph is not claimed to be unsafe-free. RustSec, transitive dependency, exact source/unsafe boundary, license/redistribution, and native packaging checks remain mandatory gates.
 
 ## Validation required before production adoption
