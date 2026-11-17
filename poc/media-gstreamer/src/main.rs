@@ -285,7 +285,6 @@ fn finish_pipeline(pipeline: &gst::Pipeline) -> Result<()> {
     }
 }
 
-
 #[cfg(test)]
 mod integration_tests {
     use super::*;
@@ -306,8 +305,8 @@ mod integration_tests {
                 .context("starting integration-test pipeline")?;
             push_test_media(&pipeline)?;
             finish_pipeline(&pipeline)?;
-            let metadata = std::fs::metadata(&output)
-                .context("reading finalized integration-test output")?;
+            let metadata =
+                std::fs::metadata(&output).context("reading finalized integration-test output")?;
             anyhow::ensure!(metadata.len() > 0, "finalized media output is empty");
             Ok::<_, anyhow::Error>(())
         })();
