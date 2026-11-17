@@ -19,7 +19,9 @@ impl CaptureSessionId {
     pub fn new(value: impl Into<String>) -> Result<Self, PortError> {
         let value = value.into();
         if value.trim().is_empty() {
-            return Err(PortError::InvalidInput("capture session id must not be empty".into()));
+            return Err(PortError::InvalidInput(
+                "capture session id must not be empty".into(),
+            ));
         }
         Ok(Self(value))
     }
@@ -40,7 +42,9 @@ impl MediaSessionId {
     pub fn new(value: impl Into<String>) -> Result<Self, PortError> {
         let value = value.into();
         if value.trim().is_empty() {
-            return Err(PortError::InvalidInput("media session id must not be empty".into()));
+            return Err(PortError::InvalidInput(
+                "media session id must not be empty".into(),
+            ));
         }
         Ok(Self(value))
     }
@@ -111,10 +115,7 @@ pub trait CameraCapturePort: Send {
     /// Enumerates available cameras.
     fn list_sources(&mut self) -> Result<Vec<SourceDescriptor>, PortError>;
     /// Opens the selected camera.
-    fn start(
-        &mut self,
-        source: &SelectedSource,
-    ) -> Result<CaptureSessionId, PortError>;
+    fn start(&mut self, source: &SelectedSource) -> Result<CaptureSessionId, PortError>;
     /// Stops the camera and releases device resources.
     fn stop(&mut self, session: &CaptureSessionId) -> Result<(), PortError>;
 }
@@ -124,10 +125,7 @@ pub trait MicrophoneCapturePort: Send {
     /// Enumerates available microphones.
     fn list_sources(&mut self) -> Result<Vec<SourceDescriptor>, PortError>;
     /// Opens the selected microphone with an explicitly negotiated format.
-    fn start(
-        &mut self,
-        source: &SelectedSource,
-    ) -> Result<CaptureSessionId, PortError>;
+    fn start(&mut self, source: &SelectedSource) -> Result<CaptureSessionId, PortError>;
     /// Stops the microphone and joins/drains its worker before returning.
     fn stop(&mut self, session: &CaptureSessionId) -> Result<(), PortError>;
 }
