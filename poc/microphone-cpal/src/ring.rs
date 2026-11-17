@@ -155,8 +155,8 @@ mod tests {
 
 #[cfg(test)]
 mod loom_tests {
-    use loom::sync::atomic::{AtomicUsize, Ordering};
     use loom::sync::Arc;
+    use loom::sync::atomic::{AtomicUsize, Ordering};
     use loom::thread;
 
     #[test]
