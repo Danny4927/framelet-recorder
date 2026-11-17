@@ -1,0 +1,12 @@
+[package]
+name = "framelet-microphone-poc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+
+[workspace]
+
+[dependencies]
+cpal = { version = "=0.18.2", default-features = false, features = ["pipewire", "alsa"] }
+framelet-capture-api = { path = "../../crates/capture-api" }
