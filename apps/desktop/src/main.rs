@@ -1,12 +1,12 @@
 #![deny(unsafe_code)]
 #![allow(missing_docs)]
 
-use std::time::Duration;
-
 slint::include_modules!();
 
 #[cfg(windows)]
 fn apply_native_title_bar(window: &MainWindow) {
+    use std::time::Duration;
+
     use slint::winit_030::{WinitWindowAccessor, winit};
     use winit::platform::windows::{Color, WindowExtWindows};
 
