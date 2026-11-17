@@ -204,7 +204,40 @@ mod tests {
     }
 
     #[test]
-    fn supports_multiple_producers_and_a_consumer_without_exceeding_capacity() {
+    fn producer_and_consumer_run_concurrently_with_bounded_occupancy() {
+        let (producer, consumer) = bounded(8).expect("positive capacity");
+        let first = producer.clone();
+        let second = producer.clone();
+        drop(producer);
+
+        let consumer_worker = thread::spawn(move || {
+            let mut received = 0_u64;
+            while consumer.pop().is_some() {
+                received += 1;
+            }
+            (received, consumer.metrics())
+        });
+        let a = thread::spawn(move || {
+            (0..1_000).filter(|value| first.try_push(*value).is_ok()).count()
+        });
+        let b = thread::spawn(move || {
+            (1_000..2_000)
+                .filter(|value| second.try_push(*value).is_ok())
+                .count()
+        });
+
+        let accepted_by_producers = a.join().expect("first producer")
+            + b.join().expect("second producer");
+        let (received, metrics) = consumer_worker.join().expect("consumer worker");
+        assert_eq!(received, accepted_by_producers as u64);
+        assert_eq!(metrics.accepted, accepted_by_producers as u64);
+        assert_eq!(metrics.accepted + metrics.rejected, 2_000);
+        assert!(metrics.high_watermark <= metrics.capacity);
+        assert_eq!(metrics.queued, 0);
+    }
+
+    #[test]
+    fn concurrent_producers_never_exceed_queue_capacity() {
         let (producer, consumer) = bounded(8).expect("positive capacity");
         let first = producer.clone();
         let second = producer.clone();
