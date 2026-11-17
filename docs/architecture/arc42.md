@@ -38,6 +38,10 @@ Stakeholders: end users (predictable private recordings), maintainers (auditable
 - Monotonic timestamps drive media synchronization; validate external dimensions and use checked arithmetic.
 - If a capability cannot be implemented through a suitable safe API, defer it or select another backend; never weaken the safety rule.
 
+## Planning and work tracking
+
+The authoritative project plan and progress tracking live in version-controlled Markdown files in this repository. GitHub Issues are not used for planning, backlog, bug, task, or phase tracking. Update the roadmap, specification, arc42 sections, and ADRs through reviewed Git changes as appropriate. Pull requests are used for code review and delivery only.
+
 ## 3. Context and Scope
 
 Framelet is one desktop process with no server-side counterpart and no internet requirement.
