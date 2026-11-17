@@ -66,6 +66,8 @@ No telemetry, update checks, upload, remote control, or cloud processing is in s
 
 ## 4. Solution Strategy
 
+**Incremental delivery strategy:** implement user-visible capabilities as vertical slices. Connect the UI, core use case, platform/media/storage adapters, and desktop composition root as soon as each capability is ready; do not postpone integration to a final phase. Each slice must be exercisable in the running application, provide truthful availability/error states, and include a manual UI test procedure. Track implementation, automated testing, UI integration, and real-device validation as separate evidence states.
+
 Domain-Driven Design complements the hexagonal architecture: the domain model and its invariants belong to the core; application use cases coordinate domain behavior and ports; adapters translate external concerns. The initial domain is the single Recording bounded context. Maintain a ubiquitous language and introduce additional contexts only when distinct models and ownership boundaries justify them.
 
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
