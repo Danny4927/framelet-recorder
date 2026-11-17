@@ -7,12 +7,14 @@ use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
-use framelet_capture_api::{SourceDescriptor, SourceId, SourceKind};
+use framelet_capture_api::{AudioBlock, SourceDescriptor, SourceId, SourceKind};
 
 use framelet_microphone_poc::{AudioSampleRing, build_f32_stream};
 
 const DEFAULT_DURATION: Duration = Duration::from_secs(10);
 const RING_SECONDS: usize = 2;
+const CONSUMER_CHUNK_MILLIS: u64 = 100;
+const CONSUMER_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = std::env::args().collect::<Vec<_>>();
@@ -84,7 +86,7 @@ fn print_usage() {
     println!("  --list");
     println!("  --record --device INDEX [--duration-seconds N]");
     println!("The input stream starts only after explicit --record.");
-    println!("Only F32 input is accepted; samples are discarded on exit.");
+    println!("Only F32 input is accepted; bounded AudioBlocks are consumed and discarded on exit.");
 }
 
 fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dyn Error>> {
@@ -95,9 +97,14 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
 
     let sample_rate = supported.sample_rate();
     let channels = supported.channels();
+    let channels_usize = usize::from(channels);
+    if sample_rate == 0 || channels == 0 {
+        return Err("input device reported an invalid audio configuration".into());
+    }
+
     let ring_capacity = usize::try_from(sample_rate)
         .ok()
-        .and_then(|rate| rate.checked_mul(usize::from(channels)))
+        .and_then(|rate| rate.checked_mul(channels_usize))
         .and_then(|samples| samples.checked_mul(RING_SECONDS))
         .ok_or("ring capacity overflow")?;
 
@@ -121,38 +128,98 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
     // CPAL 0.18 returns streams paused on all platforms; start explicitly.
     stream.play()?;
 
+    // Drain continuously while the stream is live. The callback remains a
+    // bounded, non-blocking producer; all allocation/API work stays here.
+    let chunk_frames = (u64::from(sample_rate) * CONSUMER_CHUNK_MILLIS / 1_000).max(1);
+    let chunk_capacity = usize::try_from(chunk_frames)
+        .ok()
+        .and_then(|frames| frames.checked_mul(channels_usize))
+        .ok_or("consumer chunk size overflow")?;
+    let mut scratch = vec![0.0_f32; chunk_capacity];
     let started = Instant::now();
-    while started.elapsed() < duration && !callback_failed.load(Ordering::Acquire) {
-        std::thread::sleep(Duration::from_millis(50));
-    }
-    drop(stream);
+    let mut first_sample_position = 0_u64;
+    let mut block_count = 0_u64;
 
-    let chunk_capacity = usize::try_from(sample_rate)
-        .map_err(|_| "sample rate does not fit this platform")?
-        .checked_mul(usize::from(channels))
-        .ok_or("drain buffer size overflow")?
-        .max(1);
-    let mut scratch = vec![0.0_f32; chunk_capacity.min(ring_capacity)];
-    let mut sample_count = 0_u64;
-    loop {
-        let count = ring.pop_into(&mut scratch);
-        if count == 0 {
-            break;
-        }
-        let count = u64::try_from(count).map_err(|_| "sample count overflow")?;
-        sample_count = sample_count.saturating_add(count);
+    while started.elapsed() < duration && !callback_failed.load(Ordering::Acquire) {
+        consume_available_blocks(
+            &ring,
+            &mut scratch,
+            sample_rate,
+            channels,
+            &mut first_sample_position,
+            &mut block_count,
+        )?;
+        std::thread::sleep(CONSUMER_POLL_INTERVAL);
     }
+
+    // Stop the producer before the final drain so no samples are left behind.
+    drop(stream);
+    consume_available_blocks(
+        &ring,
+        &mut scratch,
+        sample_rate,
+        channels,
+        &mut first_sample_position,
+        &mut block_count,
+    )?;
 
     println!(
-        "Captured {} sample frames at {} Hz ({} channels); {} samples dropped. No file created.",
-        sample_count / u64::from(channels),
+        "Consumed {} sample frames in {} AudioBlocks at {} Hz ({} channels); {} samples dropped. No file created.",
+        first_sample_position,
+        block_count,
         sample_rate,
         channels,
         ring.dropped_samples()
     );
 
     if callback_failed.load(Ordering::Acquire) {
-        return Err("audio input stream reported a runtime error".into());
+        return Err(
+            "audio input stream reported a runtime error (device may have disconnected)".into(),
+        );
     }
     Ok(())
+}
+
+/// Converts each drained chunk into an owned API block and immediately hands
+/// it to the PoC sink. The sink intentionally discards data until a writer is
+/// implemented; the bounded chunk keeps consumer memory independent of duration.
+fn consume_available_blocks(
+    ring: &AudioSampleRing,
+    scratch: &mut [f32],
+    sample_rate: u32,
+    channels: u16,
+    first_sample_position: &mut u64,
+    block_count: &mut u64,
+) -> Result<(), Box<dyn Error>> {
+    loop {
+        let count = ring.pop_into(scratch);
+        if count == 0 {
+            return Ok(());
+        }
+        if !count.is_multiple_of(usize::from(channels)) {
+            return Err("audio ring returned an incomplete interleaved frame".into());
+        }
+
+        let frames = count / usize::from(channels);
+        let timestamp =
+            Duration::from_secs_f64(*first_sample_position as f64 / f64::from(sample_rate));
+        let samples = scratch[..count].to_vec();
+        let block = AudioBlock::new(
+            sample_rate,
+            channels,
+            timestamp,
+            Some(*first_sample_position),
+            samples,
+        )
+        .map_err(|error| format!("invalid audio block: {error:?}"))?;
+
+        // This is the seam for the future bounded encoder/writer channel.
+        // Dropping the owned block is deliberate in this capture-only PoC.
+        *first_sample_position = first_sample_position
+            .checked_add(u64::try_from(block.frame_count())?)
+            .ok_or("audio sample position overflow")?;
+        *block_count = block_count.saturating_add(1);
+        debug_assert_eq!(block.frame_count(), frames);
+        drop(block);
+    }
 }
