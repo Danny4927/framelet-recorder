@@ -20,9 +20,9 @@ Install native Linux development packages for both backends (for Arch/CachyOS, i
 From the repository root:
 
 ```bash
-cargo check --manifest-path poc/microphone-cpal/Cargo.toml --locked
-cargo test --manifest-path poc/microphone-cpal/Cargo.toml --locked
-cargo clippy --manifest-path poc/microphone-cpal/Cargo.toml --all-targets --locked -- -D warnings
+cargo check --manifest-path poc/microphone-cpal/Cargo.toml
+cargo test --manifest-path poc/microphone-cpal/Cargo.toml
+cargo clippy --manifest-path poc/microphone-cpal/Cargo.toml --all-targets -- -D warnings
 cargo run --manifest-path poc/microphone-cpal/Cargo.toml -- --list
 cargo run --manifest-path poc/microphone-cpal/Cargo.toml -- --record --device 0 --duration-seconds 10
 ```
