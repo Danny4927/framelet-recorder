@@ -5,6 +5,8 @@ export component MainWindow inherits Window {
     width: 760px;
     height: 560px;
     background: #10141c;
+    no-frame: true;
+    resize-border-width: 8px;
     in-out property <string> selected-mode: "Screen";
     in-out property <string> status-message: "Bereit für deine Aufnahme";
     callback start-recording();
@@ -12,10 +14,33 @@ export component MainWindow inherits Window {
     VerticalLayout {
         padding: 28px;
         spacing: 18px;
-        HorizontalLayout {
-            spacing: 10px;
-            Text { text: "framelet"; color: #f5f7fb; font-size: 27px; font-weight: 700; }
-            Text { text: "CAPTURE. SAVE. DONE."; color: #8491a5; font-size: 10px; vertical-alignment: center; }
+        Rectangle {
+            height: 42px;
+            background: #171e2a;
+            border-radius: 9px;
+            HorizontalLayout {
+                padding-left: 10px; padding-right: 6px; spacing: 10px;
+                WindowMoveArea {
+                    horizontal-stretch: 1;
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Rectangle {
+                            width: 26px; height: 26px; background: #2869b2; border-radius: 7px;
+                            HorizontalLayout {
+                                alignment: center; spacing: 2px;
+                                Rectangle { width: 3px; height: 9px; background: #ffffff; border-radius: 2px; }
+                                Rectangle { width: 3px; height: 15px; background: #ffffff; border-radius: 2px; }
+                                Rectangle { width: 3px; height: 11px; background: #ffffff; border-radius: 2px; }
+                            }
+                        }
+                        Text { text: "Framelet"; color: #f5f7fb; font-size: 17px; font-weight: 700; vertical-alignment: center; }
+                        Text { text: "CAPTURE. SAVE. DONE."; color: #8491a5; font-size: 9px; vertical-alignment: center; }
+                    }
+                }
+                Rectangle { width: 30px; height: 28px; background: transparent; border-radius: 5px; TouchArea { clicked => { root.minimized = true; } } Text { text: "—"; color: #aeb9c9; horizontal-alignment: center; vertical-alignment: center; } }
+                Rectangle { width: 30px; height: 28px; background: transparent; border-radius: 5px; TouchArea { clicked => { root.maximized = !root.maximized; } } Text { text: root.maximized ? "❐" : "□"; color: #aeb9c9; horizontal-alignment: center; vertical-alignment: center; } }
+                Rectangle { width: 30px; height: 28px; background: transparent; border-radius: 5px; TouchArea { clicked => { root.close(); } } Text { text: "×"; color: #e58a8a; horizontal-alignment: center; vertical-alignment: center; } }
+            }
         }
         Text { text: "Was möchtest du aufnehmen?"; color: #f5f7fb; font-size: 22px; font-weight: 600; }
         VerticalLayout {
