@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.10 — Phase 3 storage failure-path hardening slice  
+**Version:** 0.11 — Phase 2 media pipeline validation slice  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application. The filesystem storage adapter implements the core storage port as an isolated crate; it is not yet composed with a production media writer. Its latest hardening adds collision-safe temporary-name reservation retries and regression coverage for existing-file collisions, aborted candidates, and publication behavior. End-to-end storage finalization, injected filesystem failures, power-loss durability, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application. The filesystem storage adapter implements the core storage port as an isolated crate; it is not yet composed with a production media writer. Its latest hardening adds collision-safe temporary-name reservation retries and regression coverage for existing-file collisions, aborted candidates, and publication behavior. The isolated GStreamer PoC now uses a bounded producer-to-pipeline-worker queue and covers EOS, filesink failure, and EOS timeout on Linux CI. Production media selection, independent playback, encoder/interruption failure injection, sustained-load measurements, native redistribution review, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -151,7 +151,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
-| Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska EOS finalization; no production adapter, independent playback proof, overload validation, or benchmark evidence yet |
+| Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska; bounded producer/worker queue, counted video drops, fatal audio overload, queue metrics, EOS, filesink-error and timeout tests exist; no production adapter, independent playback proof, sustained-load validation, or hardware benchmark evidence |
 | Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery; no production media writer or composition yet |
 | Platform packaging | Not implemented |
 
@@ -222,7 +222,7 @@ One installed desktop process; no daemon or helper service. The isolated media e
 - Linux X11: separate adapter/package validation; no implied Wayland parity.
 - Output and settings stay in user-owned local directories.
 
-The GStreamer media PoC uses appsrc, videoconvert, vp8enc, audioconvert, audioresample, vorbisenc, matroskamux, and filesink. This is a PoC-specific diagnostic plugin set, not an approved production allowlist. Native runtime/plugin inventory must be explicit and reproducible. Do not load arbitrary plugins from user-writable paths. Test packages on clean machines; recording must work offline.
+The GStreamer media PoC uses appsrc, videoconvert, vp8enc, audioconvert, audioresample, vorbisenc, matroskamux, and filesink. This is a PoC-specific diagnostic plugin set, not an approved production allowlist. Linux CI exercises this set; Windows clean-machine deployment and a redistributable plugin/license inventory have not been validated. Native runtime/plugin inventory must be explicit and reproducible. Do not load arbitrary plugins from user-writable paths. Test packages on clean machines; recording must work offline.
 
 ## 8. Cross-cutting Concepts
 
@@ -232,7 +232,7 @@ Use owned media blocks at asynchronous boundaries unless a safe lifetime-bound a
 
 ### Backpressure
 
-Every queue has a fixed capacity and policy. Video may drop stale frames to bound latency, but drops are counted and surfaced. Audio loss is never silent. Control events cannot be starved by media payloads. Queue capacities remain open until formats and throughput are measured. The Phase 2 validation slice adds regression coverage for the chosen queue-full policy and timestamp continuity; it does not promote the diagnostic PoC to a production media adapter.
+Every queue has a fixed capacity and policy. Video may drop stale frames to bound latency, but drops are counted and surfaced. Audio loss is never silent. Control events cannot be starved by media payloads. The GStreamer evaluation PoC uses a fixed-capacity channel between its synthetic producer and pipeline worker. Producer sends are non-blocking: video uses counted drop-newest, while audio queue rejection fails the synthetic recording instead of silently introducing a gap. Queue capacity, high-water mark, accepted items, and rejected items are reported. The channel is not yet the final multi-source capture topology; sustained-load/control-path independence and real-device audio-gap policy remain validation gates. It does not promote the diagnostic PoC to a production media adapter.
 
 ### Time and synchronization
 
@@ -248,11 +248,11 @@ Typed errors cross module boundaries and become actionable UI messages. Preserve
 
 ### Testing
 
-Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, queue overload behavior, terminal EOS/error handling, and incomplete-output cleanup. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery; platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
+Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery; platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
 
 ## 9. Architecture Decisions
 
-See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md). The filesystem storage adapter slice is recorded in [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md); it does not supersede the deferred production media choice in ADR-0004.
+See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md), and the Phase 2 comparison/continued-deferral decision is recorded in [ADR-0015](adr/ADR-0015-media-backend-evaluation-decision.md). The filesystem storage adapter slice is recorded in [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md); ADR-0015 preserves the deferred production media choice in ADR-0004.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -270,6 +270,7 @@ See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in 
 | ADR-0012 | Define granular Recording bounded-context port boundaries | Accepted |
 | ADR-0013 | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
 | ADR-0014 | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |
+| ADR-0015 | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only |
 
 ## 10. Quality Requirements
 

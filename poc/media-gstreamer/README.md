@@ -4,7 +4,7 @@
 
 This PoC is deliberately outside the root Cargo workspace. It accepts Framelet-owned, validated synthetic `VideoFrame` and `AudioBlock` values through GStreamer's Rust `appsrc` API, sets timestamps/durations on media buffers, encodes them with VP8/Vorbis, muxes a Matroska file, and waits for EOS or an error before reporting success.
 
-The current source is an initial pipeline skeleton. Treat CI compilation as API/build evidence only: it is not yet proof that the output is playable, synchronized, performant, packageable, or suitable for production. The hardware-free tests in `src/validation.rs` exercise reference models only (timeline invariants, a single-threaded queue model, and a two-stream terminal-state model). They do not test concurrent queueing or native error injection. A separate Linux CI integration test initializes GStreamer, pushes synthetic audio/video through the actual pipeline, waits for the pipeline-wide EOS bus message, and verifies a non-empty output file. The terminal-state model is not wired into runtime coordination; branch-specific error injection and timeout integration tests remain open. Phase 2 remains open until real integration tests, independent playback, and the measurement/failure matrix below are completed.
+The PoC now runs a synthetic producer and a separate pipeline worker through a fixed-capacity, non-blocking hand-off queue. Producers never wait for queue capacity: video uses counted drop-newest; audio rejection is fatal and therefore cannot silently create an audio gap. Queue capacity, high-water mark, accepted items, and rejected items are reported. The queue has concurrent producer/consumer tests, concurrent-producer tests, a full-queue contract test, and a disconnected-consumer test. The GStreamer integration suite covers pipeline-wide EOS/non-empty output, a filesink failure, and a bounded missing-EOS timeout. The main executable removes candidate output on any pipeline failure. These are synthetic Linux CI checks, not independent-player, hardware-performance, interruption-recovery, or production-readiness evidence.
 
 ## Requirements
 
@@ -34,8 +34,8 @@ The command refuses to overwrite an existing output. It writes only synthetic te
 
 - VP8 + Vorbis in Matroska is a permissive evaluation format; this is not yet the intended user-facing MP4/H.264 + AAC format.
 - No pause/resume, camera composition, resampling policy, pixel conversion policy beyond GStreamer elements, device integration, hardware encoding, crash recovery, transactional publication, or independent-player validation is claimed.
-- The prototype currently feeds synthetic data from a single producer thread. The bounded queue in `validation.rs` is a single-threaded reference model, not the producer queue used by the pipeline. A future measurement pass must add bounded producer queues, separate producer workers, explicit backpressure/drop accounting, and deterministic teardown tests before performance conclusions.
-- RSS, CPU, startup, A/V drift, queue high-water marks, and stop-to-EOS measurements are not yet collected.
+- The prototype uses one synthetic producer thread and one pipeline worker connected by a bounded channel. The channel is not the final multi-source capture topology; it proves bounded ownership transfer and overload accounting only. A future media adapter must define independent source policies and prove that lifecycle/control commands cannot be starved by sustained media load.
+- Queue high-water/rejection counters are collected per run. CPU, process RSS, startup, throughput, A/V drift, long-run sync, and representative stop-to-EOS measurements are not yet collected.
 - Native plugin inventory, codec redistribution terms, CVE/RustSec audit, and clean-machine Windows/Linux packaging remain pending.
 
 ## Required evaluation matrix
@@ -47,7 +47,7 @@ Record OS release, hardware, runtime version, plugins, Rust version, build type 
 | Output correctness | Open generated output in two independent players; inspect streams and durations | Player/version, stream metadata and result |
 | A/V time | Compare generated audio/video start/end and drift under load | Measured drift and timeline notes |
 | Backpressure | Slow encoder / constrain queue; verify bounded memory and audio-loss reporting | Queue capacity/high-water, drops/overruns |
-| Finalization | EOS, encoder error, sink error, timeout and interrupted process | Result and surviving-file behavior |
+| Finalization | EOS, sink error and EOS timeout are covered by Linux integration tests; encoder-specific failure and interrupted-process recovery remain open | CI test result plus real-process recovery evidence |
 | Performance | Startup, CPU, process RSS, throughput, stop-to-EOS | Hardware, OS, duration, metrics |
 | Portability | Clean Linux and Windows machine; no development-path assumptions | Install/package inventory |
 | Governance | Runtime/plugin license, transitive deps, advisories, maintenance | Reviewed inventory and audit output |
@@ -63,4 +63,4 @@ Record OS release, hardware, runtime version, plugins, Rust version, build type 
 
 ## Phase 2 validation evidence
 
-Only a basic GStreamer happy-path EOS integration test is recorded by this PoC PR; branch-specific error/timeout integration tests, independent-player, actual bounded-overload, long-run drift, hardware performance, native license/plugin, or clean-machine packaging evidence remain open. CI checks compilation, reference-model tests, Clippy and formatting only. Do not interpret a green workflow as passing the evaluation matrix above.
+Linux CI now covers the real pipeline EOS path, non-empty output, filesink failure, bounded EOS timeout, reference-model invariants, and a concurrent bounded producer queue. Encoder-specific failures, interrupted-process recovery, independent-player playback, final output-format selection, sustained overload/drift, hardware performance, native license/plugin redistribution review, and clean-machine Windows/Linux packaging remain open. Do not interpret a green workflow as passing the complete evaluation matrix above.
