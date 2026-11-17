@@ -71,6 +71,8 @@ jobs:
       - name: Install cargo-deny
         run: cargo install cargo-deny --locked
       - name: Audit RustSec advisories
-        run: cargo audit --deny warnings
+        # Deny unsound advisories and vulnerabilities; report unmaintained
+        # transitive crates without failing when no fixed upgrade exists.
+        run: cargo audit --deny unsound
       - name: Check licenses, sources, bans and advisories
         run: cargo deny check
