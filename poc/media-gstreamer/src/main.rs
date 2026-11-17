@@ -11,6 +11,7 @@
 
 #[cfg(test)]
 mod validation;
+mod media_queue;
 
 use std::{path::PathBuf, time::Duration};
 
@@ -261,10 +262,17 @@ fn f32le_bytes(samples: &[f32]) -> Vec<u8> {
 }
 
 fn finish_pipeline(pipeline: &gst::Pipeline) -> Result<()> {
+    finish_pipeline_with_timeout(pipeline, Duration::from_secs(30))
+}
+
+fn finish_pipeline_with_timeout(pipeline: &gst::Pipeline, timeout: Duration) -> Result<()> {
     let bus = pipeline.bus().context("pipeline bus missing")?;
+    let timeout = gst::ClockTime::from_nseconds(
+        u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX),
+    );
     let message = bus
         .timed_pop_filtered(
-            gst::ClockTime::from_seconds(30),
+            timeout,
             &[gst::MessageType::Eos, gst::MessageType::Error],
         )
         .context("timed out waiting for media finalization")?;
@@ -313,5 +321,45 @@ mod integration_tests {
 
         let _ = std::fs::remove_file(&output);
         result.expect("synthetic GStreamer pipeline should finalize successfully");
+    }
+
+    #[test]
+    fn missing_output_directory_is_reported_as_pipeline_failure() {
+        let output = std::env::temp_dir()
+            .join(format!("framelet-gstreamer-missing-{}-{}", std::process::id(), "dir"))
+            .join("recording.mkv");
+        let _ = std::fs::remove_dir_all(output.parent().expect("parent directory"));
+        let pipeline = build_pipeline(&output).expect("pipeline should build");
+        pipeline.set_state(gst::State::Playing).expect("pipeline should start");
+
+        let push_result = push_test_media(&pipeline);
+        let finish_result = if push_result.is_ok() {
+            finish_pipeline_with_timeout(&pipeline, Duration::from_secs(5))
+        } else {
+            push_result
+        };
+        let _ = pipeline.set_state(gst::State::Null);
+        assert!(finish_result.is_err(), "filesink failure must not report success");
+        assert!(!output.exists(), "failed candidate output must not survive");
+    }
+
+    #[test]
+    fn missing_eos_fails_finalization_after_the_configured_timeout() {
+        let output = std::env::temp_dir().join(format!(
+            "framelet-gstreamer-timeout-{}.mkv",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&output);
+        let pipeline = build_pipeline(&output).expect("pipeline should build");
+        pipeline.set_state(gst::State::Playing).expect("pipeline should start");
+
+        let started = std::time::Instant::now();
+        let result = finish_pipeline_with_timeout(&pipeline, Duration::from_millis(25));
+        let elapsed = started.elapsed();
+        let _ = pipeline.set_state(gst::State::Null);
+        let _ = std::fs::remove_file(&output);
+
+        assert!(result.is_err(), "missing EOS must fail finalization");
+        assert!(elapsed < Duration::from_secs(2), "timeout should be bounded");
     }
 }
