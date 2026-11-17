@@ -6,7 +6,7 @@ or container.
 
 ## Lifecycle
 
-1. `begin` reserves a unique temporary `.part` file using exclusive creation.
+1. `begin` reserves a unique temporary `.part` file using exclusive creation. If a stale candidate occupies the next generated name, the adapter advances the sequence and retries without truncating the existing file.
 2. The media adapter writes its output to `temporary_path(session)`.
 3. The media pipeline must drain and close its writer before `publish`.
 4. `publish` synchronizes the closed candidate and creates the final name with a
@@ -29,6 +29,7 @@ until a production media-container format and its validation contract are select
 - Directory fsync and power-loss durability semantics are platform/filesystem
   dependent and are not yet claimed.
 - Hosted CI does not replace real-device, filesystem fault-injection, or power-loss
-  validation.
+  validation. Reservation cleanup and name-collision regressions are covered by
+  unit tests, but injected flush/sync/link/remove failures remain outstanding.
 - The desktop composition root is not wired to this adapter yet; the media backend
   decision and later composition phase must provide a compatible pipeline.
