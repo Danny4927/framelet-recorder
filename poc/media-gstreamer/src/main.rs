@@ -391,16 +391,19 @@ mod integration_tests {
             .join("recording.mkv");
         let _ = std::fs::remove_dir_all(output.parent().expect("parent directory"));
         let pipeline = build_pipeline(&output).expect("pipeline should build");
-        pipeline.set_state(gst::State::Playing).expect("pipeline should start");
-
-        let push_result = push_test_media(&pipeline);
-        let finish_result = if push_result.is_ok() {
-            finish_pipeline_with_timeout(&pipeline, Duration::from_secs(5))
+        let start_result = pipeline.set_state(gst::State::Playing);
+        let failed = if start_result.is_err() {
+            true
         } else {
-            push_result
+            let push_result = push_test_media(&pipeline);
+            if push_result.is_ok() {
+                finish_pipeline_with_timeout(&pipeline, Duration::from_secs(5)).is_err()
+            } else {
+                true
+            }
         };
         let _ = pipeline.set_state(gst::State::Null);
-        assert!(finish_result.is_err(), "filesink failure must not report success");
+        assert!(failed, "filesink failure must not report success");
         assert!(!output.exists(), "failed candidate output must not survive");
     }
 
