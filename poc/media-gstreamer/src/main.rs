@@ -284,3 +284,35 @@ fn finish_pipeline(pipeline: &gst::Pipeline) -> Result<()> {
         _ => bail!("unexpected GStreamer terminal message"),
     }
 }
+
+
+#[cfg(test)]
+mod integration_tests {
+    use super::*;
+
+    #[test]
+    fn synthetic_audio_video_pipeline_reaches_eos_and_writes_output() {
+        let output = std::env::temp_dir().join(format!(
+            "framelet-gstreamer-integration-{}-{}.mkv",
+            std::process::id(),
+            std::thread::current().name().unwrap_or("test")
+        ));
+        let _ = std::fs::remove_file(&output);
+
+        let result = (|| {
+            let pipeline = build_pipeline(&output)?;
+            pipeline
+                .set_state(gst::State::Playing)
+                .context("starting integration-test pipeline")?;
+            push_test_media(&pipeline)?;
+            finish_pipeline(&pipeline)?;
+            let metadata = std::fs::metadata(&output)
+                .context("reading finalized integration-test output")?;
+            anyhow::ensure!(metadata.len() > 0, "finalized media output is empty");
+            Ok::<_, anyhow::Error>(())
+        })();
+
+        let _ = std::fs::remove_file(&output);
+        result.expect("synthetic GStreamer pipeline should finalize successfully");
+    }
+}
