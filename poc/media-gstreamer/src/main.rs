@@ -9,9 +9,10 @@
 //! involved. This PoC is only a pipeline wiring smoke test until real encoding,
 //! muxing, playback, clock synchronization and failure gates are measured.
 
+mod media_queue;
+
 #[cfg(test)]
 mod validation;
-mod media_queue;
 
 use std::{path::PathBuf, time::Duration};
 
@@ -181,10 +182,14 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
         while let Some(packet) = consumer.pop() {
             match packet {
                 MediaPacket::Video(buffer) => {
-                    video_source.push_buffer(buffer).context("pushing queued video frame")?;
+                    video_source
+                        .push_buffer(buffer)
+                        .context("pushing queued video frame")?;
                 }
                 MediaPacket::Audio(buffer) => {
-                    audio_source.push_buffer(buffer).context("pushing queued audio block")?;
+                    audio_source
+                        .push_buffer(buffer)
+                        .context("pushing queued audio block")?;
                 }
                 MediaPacket::End => {
                     video_source.end_of_stream().context("ending video stream")?;
@@ -197,9 +202,7 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
     });
 
     let producer_worker = thread::spawn(move || -> Result<()> {
-        let frame_duration = gst::ClockTime::from_nseconds(
-            1_000_000_000 / u64::from(FRAME_RATE),
-        );
+        let frame_duration = gst::ClockTime::from_nseconds(1_000_000_000 / u64::from(FRAME_RATE));
         let frame_bytes = usize::try_from(WIDTH)
             .ok()
             .and_then(|width| width.checked_mul(usize::try_from(HEIGHT).ok()?))
@@ -207,9 +210,8 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
             .context("video frame size overflow")?;
 
         for sequence in 0..FRAME_RATE * 5 {
-            let timestamp = Duration::from_nanos(
-                u64::from(sequence) * (1_000_000_000 / u64::from(FRAME_RATE)),
-            );
+            let timestamp =
+                Duration::from_nanos(u64::from(sequence) * (1_000_000_000 / u64::from(FRAME_RATE)));
             let frame = VideoFrame::new(
                 VideoFrameMetadata {
                     width: WIDTH,
@@ -265,8 +267,7 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                     let audio_ref = audio_buffer.get_mut().context("audio buffer is shared")?;
                     audio_ref.set_pts(gst::ClockTime::from_nseconds(timestamp.as_nanos() as u64));
                     audio_ref.set_duration(gst::ClockTime::from_nseconds(
-                        u64::from(samples_per_channel) * 1_000_000_000
-                            / u64::from(SAMPLE_RATE),
+                        u64::from(samples_per_channel) * 1_000_000_000 / u64::from(SAMPLE_RATE),
                     ));
                 }
                 producer
@@ -335,9 +336,8 @@ fn finish_pipeline(pipeline: &gst::Pipeline) -> Result<()> {
 
 fn finish_pipeline_with_timeout(pipeline: &gst::Pipeline, timeout: Duration) -> Result<()> {
     let bus = pipeline.bus().context("pipeline bus missing")?;
-    let timeout = gst::ClockTime::from_nseconds(
-        u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX),
-    );
+    let timeout =
+        gst::ClockTime::from_nseconds(u64::try_from(timeout.as_nanos()).unwrap_or(u64::MAX));
     let message = bus
         .timed_pop_filtered(
             timeout,
@@ -394,7 +394,11 @@ mod integration_tests {
     #[test]
     fn missing_output_directory_is_reported_as_pipeline_failure() {
         let output = std::env::temp_dir()
-            .join(format!("framelet-gstreamer-missing-{}-{}", std::process::id(), "dir"))
+            .join(format!(
+                "framelet-gstreamer-missing-{}-{}",
+                std::process::id(),
+                "dir"
+            ))
             .join("recording.mkv");
         let _ = std::fs::remove_dir_all(output.parent().expect("parent directory"));
         let pipeline = build_pipeline(&output).expect("pipeline should build");
@@ -422,7 +426,9 @@ mod integration_tests {
         ));
         let _ = std::fs::remove_file(&output);
         let pipeline = build_pipeline(&output).expect("pipeline should build");
-        pipeline.set_state(gst::State::Playing).expect("pipeline should start");
+        pipeline
+            .set_state(gst::State::Playing)
+            .expect("pipeline should start");
 
         let started = std::time::Instant::now();
         let result = finish_pipeline_with_timeout(&pipeline, Duration::from_millis(25));
