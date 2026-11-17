@@ -40,6 +40,12 @@ cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start --frames 120
 
 FPS is the process-side receive rate, sequence gaps are best-effort diagnostics, and frame-byte totals are throughput rather than process RSS. This PoC still does not write media, so it does not prove encoding or recording.
 
+## Microphone milestone 2 — continuous bounded AudioBlock delivery
+
+The CPAL PoC now drains the SPSC ring continuously while the stream is running instead of waiting until capture ends. It copies each drained chunk into an owned `framelet_capture_api::AudioBlock` with sample rate, channel count, a monotonic capture-relative timestamp, and a first-sample position. The consumer uses a fixed-size scratch buffer and discards each block at the PoC sink, so memory use is bounded independently of recording duration. Stream callback errors are surfaced after the stream is stopped and the remaining buffered samples are drained.
+
+This closes the previous two-second-ring/ten-second-capture mismatch: the ring is actively consumed throughout the capture window. Overflow remains explicitly counted; sample positions describe delivered frames, not a hardware clock, and a production sink must preserve discontinuities when overflow occurs. No encoder, persistent writer, non-F32 conversion, or real-device hot-unplug validation is included yet.
+
 ## Microphone milestone 1 — CPAL device and F32 input PoC
 
 The standalone `poc/microphone-cpal` package is outside the production workspace and does not add CPAL to the production dependency graph.
@@ -49,7 +55,7 @@ The standalone `poc/microphone-cpal` package is outside the production workspace
 - Only a default F32 input format is accepted for this first milestone. Other formats fail explicitly rather than being silently converted.
 - The callback copies into a preallocated two-second SPSC sample ring. It does not allocate, lock, sleep, log, send a channel message, or perform filesystem/network I/O.
 - Samples that do not fit are counted and dropped; the consumer never has unread samples overwritten.
-- The stream is explicitly started with CPAL's `.play()` call. On stop, the PoC drains/counts buffered samples and discards them. **No audio file is created.**
+- The stream is explicitly started with CPAL's `.play()` call. A consumer drains the ring every 10 ms into bounded, owned `AudioBlock` chunks while capture is active; the final buffered chunk is drained after stream shutdown. Blocks are currently discarded by the PoC sink. **No audio file is created.**
 
 Run from the repository root:
 
@@ -87,6 +93,7 @@ The device index is local to the current enumeration and is not a persistent dev
 | Windows WASAPI microphone | Input device listing, F32 sample delivery, stop, stable callback | Not run |
 | Microphone hot-unplug | Stream error observed; callback stops; no panic/leak | Not run |
 | Ring-buffer stress | Bounded memory, overflow counted, no unread overwrite | Unit-test only; real-time stress not run |
+| Ten-second microphone capture | Continuous consumer keeps ring below capacity | Implemented in PoC; real-device validation pending |
 | Display unplug/reconfigure | Failure is visible; no crash or FD leak | Not run |
 
 A backend is adopted only after build, maintenance, license, RustSec, dependency, native-library, unsafe/FFI, real-device, and packaging review. Compilation alone is not a passing device test.
