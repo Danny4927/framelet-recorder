@@ -10,7 +10,7 @@ pub use wav::{WavWriter, WavWriterError};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use cpal::traits::DeviceTrait;
-use cpal::{Data, InputCallbackInfo, Stream, StreamConfig};
+use cpal::{InputCallbackInfo, Stream, StreamConfig};
 
 /// Builds an F32 input stream feeding a preallocated bounded ring buffer.
 pub fn build_f32_stream(
