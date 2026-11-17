@@ -10,7 +10,7 @@ ADR-0001 already selected a modular monolith with ports-and-adapters around OS c
 
 ## Decision
 
-Hexagonal architecture (ports and adapters) is a binding constraint for the entire Framelet application, not just the OS capture boundary.
+Hexagonal architecture (ports and adapters) and Domain-Driven Design (DDD) are binding constraints for the entire Framelet application. DDD defines the domain model inside the core; hexagonal architecture protects it from external technology.
 
 1. The application core owns use cases, application/domain types, lifecycle orchestration, and port definitions.
 2. Inbound adapters (initially Slint UI) translate external commands into inbound-port calls and render state/events; they contain no business rules.
@@ -20,7 +20,8 @@ Hexagonal architecture (ports and adapters) is a binding constraint for the enti
 6. Framework/native types and errors are translated at adapter boundaries. No adapter-to-adapter calls, UI-to-adapter shortcuts, or global service locator.
 7. Core use cases must be testable with fakes and without physical devices.
 8. Structural changes update the relevant arc42 sections in the same PR. Significant decisions receive ADRs.
-9. The architecture document must retain all 12 numbered arc42 sections. Completeness and consistency are reviewed for every structural PR.
+9. Apply DDD to the application domain: maintain a ubiquitous language; model entities, value objects, aggregates, invariants, domain services, and domain events where justified; keep domain logic pure and independent of infrastructure; and document bounded contexts/context maps when multiple models emerge.
+10. The architecture document must retain all 12 numbered arc42 sections. Completeness and consistency are reviewed for every structural PR.
 
 These constraints apply to new code and refactoring of existing code. A feature is not complete if it bypasses the ports, even if it works end-to-end.
 
@@ -33,6 +34,8 @@ These constraints apply to new code and refactoring of existing code. A feature 
 ## Consequences
 
 - Clear dependency direction and replaceable adapters across all external capabilities.
+- Explicit domain concepts and invariants protected from UI, persistence, capture, and media infrastructure.
+- Additional modeling and mapping work; avoid ceremonial DDD patterns and premature bounded contexts.
 - More explicit ports, wiring, and test doubles; avoid speculative ports and empty crates by introducing them when a real use case requires them.
 - The desktop composition root becomes responsible for dependency injection.
 - Architecture review and arc42 updates are part of definition of done.
@@ -41,6 +44,7 @@ These constraints apply to new code and refactoring of existing code. A feature 
 ## Validation
 
 - Inspect the dependency graph: core has no concrete UI/platform/media/storage dependencies.
+- Review domain code for framework independence, consistent ubiquitous language, explicit invariants, and justified aggregate boundaries.
 - Add architecture tests or crate dependency checks as the workspace grows.
 - Core use-case tests run using fakes only.
 - PR review checks all 12 arc42 sections, verifies no duplicate/missing ADR entries, and checks that implementation status is not overstated.
