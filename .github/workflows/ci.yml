@@ -58,13 +58,6 @@ jobs:
           FRAMELET_RUN_VISUAL_TESTS: "1"
           SLINT_SNAPSHOT_MODE: verify
         run: cargo test -p framelet-desktop --test visual_regression -- --exact main_window_default_state_matches_reference
-      - name: Upload visual regression diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: visual-regression-diagnostics
-          path: target/slint-snapshots/
-          if-no-files-found: ignore
 
   windows:
     runs-on: windows-latest
