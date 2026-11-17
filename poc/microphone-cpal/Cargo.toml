@@ -8,7 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
-cpal = { version = "=0.18.2", default-features = false, features = ["pipewire", "alsa"] }
+cpal = { version = "=0.18.2", default-features = false, features = ["pipewire"] }
 framelet-capture-api = { path = "../../crates/capture-api" }
 
 [dev-dependencies]
