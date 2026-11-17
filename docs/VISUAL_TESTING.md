@@ -36,4 +36,4 @@ For intentional UI changes, render a candidate, inspect it, then explicitly acce
 
 ## Baseline update status for the storage/recovery UI
 
-The storage/recovery UI changes intentionally alter the default window, so the checked-in default PNG must be regenerated with `SLINT_SNAPSHOT_MODE=accept` and reviewed before the visual regression gate can pass. The current CI run rendered a candidate with a 20.1% pixel difference, but the workflow does not upload the generated actual PNG as an artifact. Do not switch CI to accept mode or weaken verification. Until the candidate is rendered and reviewed on a development checkout, the current reference remains unchanged and visual CI is expected to fail.
+The storage/recovery UI changes intentionally alter the default window, so the checked-in default PNG must be regenerated with `SLINT_SNAPSHOT_MODE=accept` and reviewed before the visual regression gate can pass. CI uploads the generated expected, actual, and diff images as the `slint-visual-regression` artifact, including when verification fails. Inspect the actual image before updating the checked-in baseline. Do not switch CI to accept mode or weaken verification.
