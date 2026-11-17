@@ -101,10 +101,7 @@ pub trait ScreenCapturePort: Send {
     /// Enumerates sources without starting capture.
     fn list_sources(&mut self) -> Result<Vec<SourceDescriptor>, PortError>;
     /// Opens the OS-mediated picker and starts the selected source.
-    fn start(
-        &mut self,
-        source: &SelectedSource,
-    ) -> Result<CaptureSessionId, PortError>;
+    fn start(&mut self, source: &SelectedSource) -> Result<CaptureSessionId, PortError>;
     /// Stops the source and releases OS resources. Must be safe to call once.
     fn stop(&mut self, session: &CaptureSessionId) -> Result<(), PortError>;
 }
@@ -150,17 +147,9 @@ pub trait MediaPipelinePort: Send {
     /// Resumes media ingestion.
     fn resume(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
     /// Transfers ownership of a video frame to the pipeline.
-    fn push_video(
-        &mut self,
-        session: &MediaSessionId,
-        frame: VideoFrame,
-    ) -> Result<(), PortError>;
+    fn push_video(&mut self, session: &MediaSessionId, frame: VideoFrame) -> Result<(), PortError>;
     /// Transfers ownership of an audio block to the pipeline.
-    fn push_audio(
-        &mut self,
-        session: &MediaSessionId,
-        block: AudioBlock,
-    ) -> Result<(), PortError>;
+    fn push_audio(&mut self, session: &MediaSessionId, block: AudioBlock) -> Result<(), PortError>;
     /// Stops accepting input and drains all previously accepted media.
     fn drain(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
     /// Releases pipeline resources after drain or abort.
@@ -176,10 +165,7 @@ pub trait RecordingStoragePort: Send {
         configuration: &RecordingConfiguration,
     ) -> Result<MediaSessionId, PortError>;
     /// Flushes and closes a finalized media output, then publishes it.
-    fn publish(
-        &mut self,
-        session: &MediaSessionId,
-    ) -> Result<RecordingArtifact, PortError>;
+    fn publish(&mut self, session: &MediaSessionId) -> Result<RecordingArtifact, PortError>;
     /// Removes incomplete temporary output; must not delete an existing recording.
     fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
 }
@@ -230,13 +216,22 @@ pub enum RecordingEvent {
     /// Capture resumed.
     Resumed { recording_id: RecordingId },
     /// Finalization completed and the artifact is available.
-    Completed { recording_id: RecordingId, artifact: RecordingArtifact },
+    Completed {
+        recording_id: RecordingId,
+        artifact: RecordingArtifact,
+    },
     /// Session failed.
-    Failed { recording_id: RecordingId, reason: String },
+    Failed {
+        recording_id: RecordingId,
+        reason: String,
+    },
     /// Preparation was cancelled.
     Cancelled { recording_id: RecordingId },
     /// A source was lost during capture.
-    SourceLost { recording_id: RecordingId, source: SourceId },
+    SourceLost {
+        recording_id: RecordingId,
+        source: SourceId,
+    },
 }
 
 /// Outbound event publisher. Publishing must not block capture callbacks.
@@ -276,7 +271,10 @@ mod tests {
 
     #[test]
     fn opaque_session_ids_preserve_values() {
-        assert_eq!(CaptureSessionId::new("screen-1").unwrap().as_str(), "screen-1");
+        assert_eq!(
+            CaptureSessionId::new("screen-1").unwrap().as_str(),
+            "screen-1"
+        );
         assert_eq!(MediaSessionId::new("media-1").unwrap().as_str(), "media-1");
     }
 
