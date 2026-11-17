@@ -6,8 +6,11 @@ export component MainWindow inherits Window {
     height: 560px;
     background: #10141c;
     in-out property <string> selected-mode: "Screen";
-    in-out property <string> status-message: "Bereit für deine Aufnahme";
-    callback start-recording();
+    in-out property <string> status-message: "Aufnahme noch nicht verfügbar";
+    in-out property <string> output-directory: "";
+    in-out property <string> recovery-message: "Noch nicht geprüft";
+    callback choose-output-directory();
+    callback scan-recovery();
 
     VerticalLayout {
         padding: 28px;
@@ -86,6 +89,26 @@ export component MainWindow inherits Window {
         Rectangle {
             background: #1a2230;
             border-radius: 12px;
+            height: 116px;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 8px;
+                Text { text: "SPEICHERORT"; color: #8491a5; font-size: 10px; font-weight: 700; }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Text { text: root.output-directory; color: #e1e7f0; vertical-alignment: center; overflow: elide; }
+                    Button { text: "Ändern"; clicked => { root.choose-output-directory(); } }
+                }
+                HorizontalLayout {
+                    spacing: 8px;
+                    Button { text: "Temporäre Dateien prüfen"; clicked => { root.scan-recovery(); } }
+                    Text { text: root.recovery-message; color: #9aa8bb; vertical-alignment: center; overflow: elide; }
+                }
+            }
+        }
+        Rectangle {
+            background: #1a2230;
+            border-radius: 12px;
             height: 112px;
             VerticalLayout {
                 padding: 16px;
@@ -131,11 +154,8 @@ export component MainWindow inherits Window {
         }
         VerticalLayout {
             alignment: end;
-            Button {
-                text: "Aufnahme vorbereiten";
-                primary: true;
-                clicked => { root.start-recording(); }
-            }
+            Button { text: "Aufnahme vorbereiten"; enabled: false; primary: true; }
+            Text { text: root.status-message; color: #9aa8bb; font-size: 11px; }
         }
     }
 }
