@@ -152,7 +152,7 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                 sequence: u64::from(sequence),
             },
             synthetic_frame(frame_bytes, sequence),
-        ).context("creating owned test video frame")?;
+        ).map_err(|error| anyhow::anyhow!("creating owned test video frame: {error:?}"))?;
 
         let mut buffer = gst::Buffer::from_mut_slice(frame.data);
         {
@@ -179,7 +179,7 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                 timestamp,
                 Some(u64::from(sequence / 3) * u64::from(samples_per_channel)),
                 samples,
-            ).context("creating owned test audio block")?;
+            ).map_err(|error| anyhow::anyhow!("creating owned test audio block: {error:?}"))?;
 
             let mut audio_buffer = gst::Buffer::from_mut_slice(f32le_bytes(&block.samples));
             {
