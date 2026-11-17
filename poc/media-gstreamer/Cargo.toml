@@ -1,0 +1,14 @@
+[package]
+name = "framelet-media-gstreamer-poc"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+publish = false
+license = "MIT"
+
+[dependencies]
+anyhow = "1"
+gstreamer = "0.25"
+gstreamer-app = "0.25"
+gstreamer-video = "0.25"
+framelet-capture-api = { path = "../../crates/capture-api" }

@@ -41,7 +41,7 @@ System audio capture is out of scope.
 
 ## Status
 
-The repository contains the product and engineering specification, safe media data contracts, a bounded worker-level audio block queue, and isolated capture proof-of-concepts. The queue is not callback-safe; CPAL remains outside the production workspace. Capture backends still require real-device, security and packaging validation.
+The repository contains the product and engineering specification, the Recording core/use cases and ports, safe media data contracts, a bounded worker-level audio block queue, and isolated Wayland, CPAL microphone, and GStreamer media proof-of-concepts. CPAL and GStreamer remain outside the production workspace. No production media backend is approved; capture and media PoCs still require real-device, independent playback, security and packaging validation.
 
 ## Documentation
 
@@ -49,6 +49,7 @@ The repository contains the product and engineering specification, safe media da
 - [Product and technical specification](SPECIFICATION.md)
 - [Security policy and engineering rules](SECURITY.md)
 - [Capture backend PoCs](docs/CAPTURE_POC.md)
+- [GStreamer media pipeline PoC](poc/media-gstreamer/README.md)
 - [Microphone PoC guide](poc/microphone-cpal/README.md)
 - [Linux installation plan (Arch Linux / CachyOS)](docs/LINUX_INSTALLATION.md)
 - [Real-device testing](docs/REAL_DEVICE_TESTING.md)

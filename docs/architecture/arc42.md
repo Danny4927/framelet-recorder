@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.6 — Phase 1 core ports and orchestration  
+**Version:** 0.7 — Phase 2 GStreamer evaluation PoC  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, and core-owned source, media, storage, clock, settings, repository, event, and metrics ports. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -77,7 +77,7 @@ Domain-Driven Design complements the hexagonal architecture: the domain model an
 7. Local transactional output: exclusive temporary file, successful finalization, then collision-safe publication.
 8. Fail visibly: count video drops; detect/report audio loss, disconnects, and finalization errors.
 9. Safe Rust boundary; third-party unsafe internals are reviewed risks.
-10. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
+10. Capture/media dependencies remain candidates until PoCs and packaging/security review pass.
 
 ## 5. Building Block View
 
@@ -176,7 +176,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
-| Media pipeline/compositing/encoding | Not implemented |
+| Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC added for synthetic VP8/Vorbis-to-Matroska evaluation; not production-wired; independent playback, A/V drift, bounded overload and performance gates remain open |
 | Storage/recovery | Not implemented |
 | Platform packaging | Not implemented |
 
@@ -241,14 +241,14 @@ Pause is coordinated across sources and pipeline. The core records monotonic pau
 
 ## 7. Deployment View
 
-One installed desktop process; no daemon or helper service.
+One installed desktop process; no daemon or helper service. The isolated media evaluation currently requires a separately installed GStreamer runtime and plugins; this native dependency is intentionally excluded from production application packages.
 
 - Windows: executable plus explicitly packaged and reviewed runtime dependencies.
 - Linux Wayland: executable plus documented portal/PipeWire integration and runtime dependencies.
 - Linux X11: separate adapter/package validation; no implied Wayland parity.
 - Output and settings stay in user-owned local directories.
 
-Native runtime/plugin inventory must be explicit and reproducible. Do not load arbitrary plugins from user-writable paths. Test packages on clean machines; recording must work offline.
+The GStreamer media PoC uses appsrc, videoconvert, vp8enc, audioconvert, audioresample, vorbisenc, matroskamux, and filesink. This is a PoC-specific diagnostic plugin set, not an approved production allowlist. Native runtime/plugin inventory must be explicit and reproducible. Do not load arbitrary plugins from user-writable paths. Test packages on clean machines; recording must work offline.
 
 ## 8. Cross-cutting Concepts
 
@@ -278,7 +278,7 @@ Unit tests cover state/use cases, timestamps, settings, paths, checked buffer ca
 
 ## 9. Architecture Decisions
 
-See [ADR index](adr/README.md).
+See [ADR index](adr/README.md). Phase 2 work is tracked in [PR #14](https://github.com/Danny4927/framelet-recorder/pull/14) and begins with [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md), which records GStreamer as an evaluation candidate only.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -318,6 +318,7 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 |---|---|---|
 | Safe wrapper lacks required OS behavior | Platform capability blocked under no-unsafe policy | Test public safe APIs early; defer rather than add unsafe glue |
 | GStreamer runtime/plugin footprint | Package complexity and support burden | Minimal plugin inventory and clean-machine PoC |
+| Dual-stream timestamp and EOS behavior | A/V drift or incomplete containers | Independent playback, synthetic clock tests, injected errors and stop-to-EOS measurements in the isolated media PoC |
 | Wayland desktop differences | Uneven Linux behavior | GNOME and KDE tests; portal session/cancel handling |
 | Audio overload | Gaps and sync errors | Bounded ring buffer, counters, stress/device tests |
 | Pause semantics differ | Timestamp discontinuities | Common timeline contract and conformance tests |
