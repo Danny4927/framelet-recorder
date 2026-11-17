@@ -30,6 +30,8 @@ Stakeholders: end users (predictable private recordings), maintainers (auditable
 - Exactly four MVP modes; optional microphone where specified; no system audio.
 - Local files only; offline recording; OS-mediated permissions; never bypass compositor/portal controls.
 - Rust Edition 2024. Every first-party crate must use #![forbid(unsafe_code)]. No raw pointers, custom FFI, unsafe trait implementations, or lint exceptions.
+- **Binding architecture:** hexagonal architecture (ports and adapters) applies to the whole application. Core owns use cases, domain/application types, and ports. Concrete adapters depend inward on those contracts. The desktop executable is the only composition root. No production feature may bypass this boundary.
+- **Binding documentation:** this file is the arc42 architecture document and must retain all 12 numbered sections (1–12). Structural changes update the relevant sections in the same PR; significant decisions receive an ADR. The implementation roadmap is maintained separately and linked from this document.
 - Third-party dependencies may contain unsafe internals, but require review of unsafe/FFI boundaries, advisories, license, maintenance, transitive dependencies, native libraries, and platform parity.
 - UI thread is non-blocking; audio callbacks are real-time safe; queues are bounded.
 - Monotonic timestamps drive media synchronization; validate external dimensions and use checked arithmetic.
@@ -64,7 +66,7 @@ No telemetry, update checks, upload, remote control, or cloud processing is in s
 ## 4. Solution Strategy
 
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
-2. Ports and adapters: core depends on application-owned interfaces, not platform crates.
+2. Hexagonal architecture: all inbound and outbound interactions cross application-owned ports; concrete adapters depend inward on core-owned contracts. This is mandatory for every production feature, not only OS capture.
 3. Core-owned lifecycle: one authority coordinates prepare, record, pause, resume, stop, cancel, and finalize.
 4. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
 5. One monotonic media timeline with a common recording origin.
@@ -109,9 +111,29 @@ flowchart TB
 
 Create crates only when real code justifies a boundary. No empty placeholder members.
 
-### 5.3 Dependency direction
+### 5.3 Hexagonal architecture and dependency rule (binding)
 
-The desktop executable is the composition root. Core depends on contracts, not Slint, GStreamer, CPAL, nokhwa, PipeWire, or Windows API crates. Adapters implement ports and are wired by desktop. Core unit tests use fakes and do not need capture devices.
+The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities.
+
+- **Inbound ports:** typed use-case APIs such as PrepareRecording, StartRecording, PauseRecording, ResumeRecording, StopRecording, CancelRecording, and query/state subscriptions.
+- **Inbound adapters:** Slint UI event handlers and future command/automation entry points. They translate external input into inbound-port calls and render returned state/events; they contain no business rules.
+- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, clock, and platform capabilities.
+- **Outbound adapters:** concrete OS/capture, CPAL or future audio backend, camera, media runtime, filesystem, and settings implementations.
+- **Composition root:** constructs adapters and injects them into core use cases. It is the only place allowed to know concrete adapter types.
+
+Dependency direction is strictly inward: adapters may depend on core-owned contracts; core must not import adapter crates, Slint, OS APIs, or media-library types. Translate native/library types and errors at adapter boundaries. Never pass framework types through a port.
+
+No UI-to-adapter shortcut, adapter-to-adapter dependency, global service locator, or concrete backend selection inside core is allowed. Core tests use fakes. Add compile-time dependency checks or architecture tests as the workspace grows.
+
+```text
+Inbound actor -> Inbound adapter -> Inbound port -> Application core
+                                                |
+                                     Outbound port (owned by core)
+                                                |
+                                  Outbound adapter -> OS/library/device
+```
+
+See ADR-0010. This rule is a release/PR acceptance criterion, not an aspirational target.
 
 ### 5.4 Current state versus target
 
@@ -235,7 +257,7 @@ See [ADR index](adr/README.md).
 | ADR-0007 | Lower-level PipeWire thread manager for the isolated frame PoC | Accepted for PoC |
 | ADR-0008 | Evaluate CPAL for microphone capture | Evaluation only |
 | ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
-| ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
+| ADR-0010 | Make hexagonal architecture and arc42 compliance binding | Accepted |
 
 ## 10. Quality Requirements
 
@@ -267,7 +289,7 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | Plugin discovery risk | Supply-chain/runtime loading risk | Explicit plugin allowlist and packaged paths |
 | Capture API too small for streaming | Expensive API rework | Design ownership and event contract during PoC |
 
-Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
+Implementation sequencing and phase exit criteria are defined in [Implementation roadmap](implementation-roadmap.md). Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
 
 ## 12. Glossary
 
