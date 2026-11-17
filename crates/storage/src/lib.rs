@@ -34,17 +34,28 @@ impl FileSystemRecordingStorage {
     pub fn new(output_directory: impl Into<PathBuf>) -> Result<Self, PortError> {
         let output_directory = output_directory.into();
         fs::create_dir_all(&output_directory).map_err(map_io_error)?;
-        if !fs::metadata(&output_directory).map_err(map_io_error)?.is_dir() {
-            return Err(PortError::InvalidInput("recording output path is not a directory".into()));
+        if !fs::metadata(&output_directory)
+            .map_err(map_io_error)?
+            .is_dir()
+        {
+            return Err(PortError::InvalidInput(
+                "recording output path is not a directory".into(),
+            ));
         }
-        Ok(Self { output_directory, active: HashMap::new(), next_session: 1 })
+        Ok(Self {
+            output_directory,
+            active: HashMap::new(),
+            next_session: 1,
+        })
     }
 
     /// Returns the temporary candidate path for a prepared session.
     ///
     /// The media adapter writes to this path and must close its writer before publish.
     pub fn temporary_path(&self, session: &MediaSessionId) -> Result<&Path, PortError> {
-        self.active.get(session).map(|pending| pending.temporary_path.as_path())
+        self.active
+            .get(session)
+            .map(|pending| pending.temporary_path.as_path())
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))
     }
 
@@ -54,7 +65,10 @@ impl FileSystemRecordingStorage {
         for entry in fs::read_dir(&self.output_directory).map_err(map_io_error)? {
             let entry = entry.map_err(map_io_error)?;
             if entry.file_name().to_string_lossy().starts_with(".framelet-pending-")
-                && entry.file_type().map_err(map_io_error)?.is_file()
+                && entry
+                    .file_type()
+                    .map_err(map_io_error)?
+                    .is_file()
             {
                 orphaned.push(entry.path());
             }
@@ -66,40 +80,59 @@ impl FileSystemRecordingStorage {
     fn paths(&self, recording_id: RecordingId, sequence: u64) -> (PathBuf, PathBuf) {
         let stem = format!("recording-{}-{sequence}", recording_id.value());
         (
-            self.output_directory.join(format!(".framelet-pending-{stem}.part")),
+            self.output_directory
+                .join(format!(".framelet-pending-{stem}.part")),
             self.output_directory.join(format!("{stem}.framelet")),
         )
     }
 }
 
 impl RecordingStoragePort for FileSystemRecordingStorage {
-    fn begin(&mut self, recording_id: RecordingId, _configuration: &RecordingConfiguration)
-        -> Result<MediaSessionId, PortError>
-    {
+    fn begin(
+        &mut self,
+        recording_id: RecordingId,
+        _configuration: &RecordingConfiguration,
+    ) -> Result<MediaSessionId, PortError> {
         let sequence = self.next_session;
-        self.next_session = self.next_session.checked_add(1)
+        self.next_session = self
+            .next_session
+            .checked_add(1)
             .ok_or_else(|| PortError::Failed("storage session identity exhausted".into()))?;
         let session = MediaSessionId::new(format!("filesystem-{sequence}"))?;
         let (temporary_path, final_path) = self.paths(recording_id, sequence);
 
         // Exclusive creation is the collision-safe reservation; never truncate.
-        let mut reservation = OpenOptions::new().write(true).create_new(true)
-            .open(&temporary_path).map_err(map_io_error)?;
+        let mut reservation = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary_path)
+            .map_err(map_io_error)?;
         reservation.flush().map_err(map_io_error)?;
         reservation.sync_all().map_err(map_io_error)?;
         drop(reservation);
 
-        self.active.insert(session.clone(), PendingOutput { temporary_path, final_path });
+        self.active.insert(
+            session.clone(),
+            PendingOutput {
+                temporary_path,
+                final_path,
+            },
+        );
         Ok(session)
     }
 
     fn publish(&mut self, session: &MediaSessionId) -> Result<RecordingArtifact, PortError> {
-        let pending = self.active.get(session)
+        let pending = self
+            .active
+            .get(session)
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
 
         // The media writer must be closed by its owner before this call.
-        let candidate = OpenOptions::new().read(true).write(true)
-            .open(&pending.temporary_path).map_err(map_io_error)?;
+        let candidate = OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&pending.temporary_path)
+            .map_err(map_io_error)?;
         candidate.sync_all().map_err(map_io_error)?;
         drop(candidate);
 
@@ -120,8 +153,8 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         let pending = self.active.get(session)
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
         match fs::remove_file(&pending.temporary_path) {
-            Ok(()) => {},
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(map_io_error(error)),
         }
         self.active.remove(session);
@@ -131,10 +164,16 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
 
 fn map_io_error(error: io::Error) -> PortError {
     match error.kind() {
-        io::ErrorKind::PermissionDenied => PortError::Failed("filesystem permission denied".into()),
+        io::ErrorKind::PermissionDenied => {
+            PortError::Failed("filesystem permission denied".into())
+        }
         io::ErrorKind::StorageFull => PortError::StorageExhausted,
-        io::ErrorKind::AlreadyExists => PortError::Failed("recording destination already exists".into()),
-        io::ErrorKind::NotFound => PortError::Failed("recording path no longer exists".into()),
+        io::ErrorKind::AlreadyExists => {
+            PortError::Failed("recording destination already exists".into())
+        }
+        io::ErrorKind::NotFound => {
+            PortError::Failed("recording path no longer exists".into())
+        }
         _ => PortError::Failed(format!("filesystem operation failed: {error}")),
     }
 }
@@ -145,26 +184,41 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(label: &str) -> PathBuf {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
-        let path = std::env::temp_dir().join(format!("framelet-storage-{label}-{}-{nonce}", std::process::id()));
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "framelet-storage-{label}-{}-{nonce}",
+            std::process::id()
+        ));
         fs::create_dir_all(&path).expect("create test directory");
         path
     }
 
     fn configuration() -> RecordingConfiguration {
-        RecordingConfiguration::new(framelet_core::RecordingMode::Screen, false).expect("valid configuration")
+        RecordingConfiguration::new(framelet_core::RecordingMode::Screen, false)
+            .expect("valid configuration")
     }
 
     #[test]
     fn exclusive_candidate_is_published_without_overwrite() {
         let directory = temp_dir("publish");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage.begin(RecordingId::new(7), &configuration()).expect("begin");
-        let candidate = storage.temporary_path(&session).expect("candidate").to_path_buf();
+        let session = storage
+            .begin(RecordingId::new(7), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
         fs::write(&candidate, b"complete media").expect("write candidate");
         let artifact = storage.publish(&session).expect("publish");
         let final_path = PathBuf::from(artifact.location());
-        assert_eq!(fs::read(final_path).expect("read published"), b"complete media");
+        assert_eq!(
+            fs::read(final_path).expect("read published"),
+            b"complete media"
+        );
         assert!(!candidate.exists());
         assert!(storage.publish(&session).is_err());
         fs::remove_dir_all(directory).expect("cleanup");
@@ -176,8 +230,13 @@ mod tests {
         let existing = directory.join("recording-9-1.framelet");
         fs::write(&existing, b"existing").expect("seed existing file");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage.begin(RecordingId::new(9), &configuration()).expect("begin");
-        let candidate = storage.temporary_path(&session).expect("candidate").to_path_buf();
+        let session = storage
+            .begin(RecordingId::new(9), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
         fs::write(&candidate, b"incomplete").expect("write partial");
         storage.abort(&session).expect("abort");
         assert!(!candidate.exists());
@@ -191,7 +250,10 @@ mod tests {
         let orphan = directory.join(".framelet-pending-recording-10-1.part");
         fs::write(&orphan, b"recoverable").expect("seed orphan");
         let storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        assert_eq!(storage.find_orphaned_temporary_files().expect("scan"), vec![orphan.clone()]);
+        assert_eq!(
+            storage.find_orphaned_temporary_files().expect("scan"),
+            vec![orphan.clone()]
+        );
         assert_eq!(fs::read(&orphan).expect("orphan retained"), b"recoverable");
         fs::remove_dir_all(directory).expect("cleanup");
     }
@@ -200,8 +262,13 @@ mod tests {
     fn missing_candidate_cannot_be_published() {
         let directory = temp_dir("missing");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage.begin(RecordingId::new(11), &configuration()).expect("begin");
-        let candidate = storage.temporary_path(&session).expect("candidate").to_path_buf();
+        let session = storage
+            .begin(RecordingId::new(11), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
         fs::remove_file(candidate).expect("remove candidate");
         assert!(storage.publish(&session).is_err());
         fs::remove_dir_all(directory).expect("cleanup");
