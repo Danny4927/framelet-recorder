@@ -25,8 +25,8 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
 | 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
-| 2 | Media pipeline evaluation and backend decision | In progress — initial isolated GStreamer spike merged in PR #14; validation slice in progress | 0, 1 (port requirements) |
-| 3 | Transactional local storage adapter and recovery contract | In progress — filesystem adapter slice in PR | 1 |
+| 2 | Media pipeline evaluation and backend decision | In progress — synthetic happy-path EOS integration exists; failure, overload, playback, performance, dependency and backend-selection gates remain open | 0, 1 (port requirements) |
+| 3 | Transactional local storage adapter and recovery contract | In progress — filesystem adapter slice merged in PR #16; failure-injection and durability gates remain open | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
 | 6 | Camera adapter and screen + camera composition | Planned | 1, 2, 5 |
@@ -105,7 +105,7 @@ Exit criteria:
 
 ## Phase 3 — Transactional local storage
 
-**Current slice:** the filesystem adapter is introduced in PR for `RecordingStoragePort`; see [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md) and `crates/storage/README.md`. The adapter is not yet wired into the desktop composition root.
+**Merged slice:** PR #16 introduces the isolated filesystem adapter for `RecordingStoragePort`; see [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md) and `crates/storage/README.md`. The desktop composition root is not wired to the adapter. The next storage hardening slice adds collision-safe reservation retries and failure-path regression coverage; this does not approve a production media backend.
 
 Deliverables:
 - Storage port and filesystem adapter for exclusive temporary output, collision-safe destination naming, flush/close, no-replace publication, and recovery discovery.
