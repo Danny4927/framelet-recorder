@@ -53,32 +53,36 @@ fn validate_timeline(samples: &[TimedSample]) -> Result<(), TimelineError> {
         if state.end.is_some_and(|previous| sample.pts < previous) {
             return Err(TimelineError("stream timestamps regress or overlap"));
         }
-        if state.sequence.is_some_and(|previous| previous.checked_add(1) != Some(sample.sequence)) {
+        if state
+            .sequence
+            .is_some_and(|previous| previous.checked_add(1) != Some(sample.sequence))
+        {
             return Err(TimelineError("stream sequence is not contiguous"));
         }
         state.sequence = Some(sample.sequence);
 
         if sample.stream == StreamKind::Audio {
-            let position = sample.sample_position.ok_or(TimelineError(
-                "audio sample position must be provided",
-            ))?;
+            let position = sample
+                .sample_position
+                .ok_or(TimelineError("audio sample position must be provided"))?;
             if state
                 .sample_position_end
                 .is_some_and(|previous| position != previous)
             {
                 return Err(TimelineError("audio sample positions are not contiguous"));
             }
-            let sample_count = u64::try_from(
-                sample.duration.as_nanos().saturating_mul(48_000) / 1_000_000_000,
-            )
-            .map_err(|_| TimelineError("audio sample count overflow"))?;
+            let sample_count =
+                u64::try_from(sample.duration.as_nanos().saturating_mul(48_000) / 1_000_000_000)
+                    .map_err(|_| TimelineError("audio sample count overflow"))?;
             state.sample_position_end = Some(
                 position
                     .checked_add(sample_count)
                     .ok_or(TimelineError("audio sample position overflow"))?,
             );
         } else if sample.sample_position.is_some() {
-            return Err(TimelineError("video sample must not have an audio position"));
+            return Err(TimelineError(
+                "video sample must not have an audio position",
+            ));
         }
         state.end = Some(end);
     }
