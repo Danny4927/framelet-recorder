@@ -41,29 +41,28 @@ System audio capture is out of scope.
 
 ## Status
 
-The repository currently contains the product and engineering specification. Capture-library choices and codec pipelines must pass the proof-of-concept and security gates described in [SPECIFICATION.md](SPECIFICATION.md) before being treated as production decisions.
+The repository contains the product and engineering specification, safe media data contracts, and isolated capture proof-of-concepts. The Wayland/PipeWire and CPAL microphone candidates are not yet production backends; real-device, security and packaging gates remain open.
 
 ## Documentation
 
 - [Architecture (arc42 + ADRs)](docs/architecture/README.md)
 - [Product and technical specification](SPECIFICATION.md)
 - [Security policy and engineering rules](SECURITY.md)
+- [Capture backend PoCs](docs/CAPTURE_POC.md)
+- [Microphone PoC guide](poc/microphone-cpal/README.md)
 - [Linux installation plan (Arch Linux / CachyOS)](docs/LINUX_INSTALLATION.md)
-- [Real-device testing (KDE Wayland)](docs/REAL_DEVICE_TESTING.md)
+- [Real-device testing](docs/REAL_DEVICE_TESTING.md)
 - [Contributor and AI-agent instructions](AGENTS.md)
 
 ## License
 
 TBD. No license is granted until a license file is added.
 
-
 ## Development workspace
 
-The initial Rust workspace and Slint desktop shell are on the foundation branch. See
-docs/CAPTURE_POC.md for capture backend evaluation and docs/VISUAL_TESTING.md for screenshot
-regression testing. Real device capture is still under PoC and is not yet implemented.
+The Rust workspace and Slint desktop shell provide the current development foundation. Real media capture, encoding and storage finalization have not been integrated into the production application.
 
-Requires Rust 1.92 or newer and Slint native build dependencies.
+Requires Rust 1.92 or newer and the native dependencies documented for the applicable PoC.
 
 ```bash
 cargo build --workspace

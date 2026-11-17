@@ -11,5 +11,6 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0005](ADR-0005-capture-media-contracts.md) | Owned media blocks and clock contracts | Accepted for PoC |
 | [ADR-0006](ADR-0006-wayland-portal-poc.md) | Wayland portal PoC using lamco-wayland | Evaluation only |
 | [ADR-0007](ADR-0007-lamco-pipewire-frame-delivery.md) | Do not use the lamco-pipewire 0.8.4 manager frame receiver | Accepted for PoC |
+| [ADR-0008](ADR-0008-cpal-microphone-capture.md) | Evaluate CPAL for microphone capture | Evaluation only |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.
