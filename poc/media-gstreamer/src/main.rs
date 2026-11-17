@@ -11,7 +11,6 @@
 
 #[cfg(test)]
 mod validation;
-#[cfg(test)]
 mod media_queue;
 
 use std::{path::PathBuf, time::Duration};
@@ -152,93 +151,151 @@ fn make_element(factory: &str, name: &str) -> Result<gst::Element> {
         .with_context(|| format!("creating GStreamer element {factory}"))
 }
 
+enum MediaPacket {
+    Video(gst::Buffer),
+    Audio(gst::Buffer),
+    End,
+}
+
 fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
+    use std::thread;
+
     let video_source = pipeline
         .by_name("framelet-video-source")
         .context("video appsrc missing")?
         .downcast::<gst_app::AppSrc>()
         .map_err(|_| anyhow::anyhow!("video source has unexpected type"))?;
-
     let audio_source = pipeline
         .by_name("framelet-audio-source")
         .context("audio appsrc missing")?
         .downcast::<gst_app::AppSrc>()
         .map_err(|_| anyhow::anyhow!("audio source has unexpected type"))?;
 
-    let frame_duration = gst::ClockTime::from_nseconds(1_000_000_000 / u64::from(FRAME_RATE));
-    let frame_bytes = usize::try_from(WIDTH)
-        .ok()
-        .and_then(|width| width.checked_mul(usize::try_from(HEIGHT).ok()?))
-        .and_then(|pixels| pixels.checked_mul(4))
-        .context("video frame size overflow")?;
+    // One bounded hand-off is shared by the synthetic producer and the
+    // pipeline worker. Producer-side sends are always try_send operations.
+    let (producer, consumer) = media_queue::bounded::<MediaPacket>(8)
+        .map_err(|_| anyhow::anyhow!("media queue capacity must be non-zero"))?;
+    let metrics_handle = producer.clone();
 
-    for sequence in 0..FRAME_RATE * 5 {
-        let timestamp =
-            Duration::from_nanos(u64::from(sequence) * (1_000_000_000 / u64::from(FRAME_RATE)));
-        let frame = VideoFrame::new(
-            VideoFrameMetadata {
-                width: WIDTH,
-                height: HEIGHT,
-                stride: WIDTH.checked_mul(4).context("video stride overflow")?,
-                pixel_format: PixelFormat::Bgra8,
-                timestamp,
-                sequence: u64::from(sequence),
-            },
-            synthetic_frame(frame_bytes, sequence),
-        )
-        .map_err(|error| anyhow::anyhow!("creating owned test video frame: {error:?}"))?;
-
-        let mut buffer = gst::Buffer::from_mut_slice(frame.data);
-        {
-            let buffer_ref = buffer.get_mut().context("video buffer is shared")?;
-            buffer_ref.set_pts(gst::ClockTime::from_nseconds(timestamp.as_nanos() as u64));
-            buffer_ref.set_duration(frame_duration);
-            buffer_ref.set_offset(u64::from(sequence));
+    let consumer_worker = thread::spawn(move || -> Result<()> {
+        while let Some(packet) = consumer.pop() {
+            match packet {
+                MediaPacket::Video(buffer) => {
+                    video_source.push_buffer(buffer).context("pushing queued video frame")?;
+                }
+                MediaPacket::Audio(buffer) => {
+                    audio_source.push_buffer(buffer).context("pushing queued audio block")?;
+                }
+                MediaPacket::End => {
+                    video_source.end_of_stream().context("ending video stream")?;
+                    audio_source.end_of_stream().context("ending audio stream")?;
+                    return Ok(());
+                }
+            }
         }
-        video_source
-            .push_buffer(buffer)
-            .context("pushing video frame")?;
+        bail!("media producer disconnected before terminal marker");
+    });
 
-        if sequence % 3 == 0 {
-            let samples_per_channel = (SAMPLE_RATE / FRAME_RATE) * 3;
-            let mut samples = Vec::with_capacity(
-                usize::try_from(samples_per_channel).unwrap_or_default() * usize::from(CHANNELS),
+    let producer_worker = thread::spawn(move || -> Result<()> {
+        let frame_duration = gst::ClockTime::from_nseconds(
+            1_000_000_000 / u64::from(FRAME_RATE),
+        );
+        let frame_bytes = usize::try_from(WIDTH)
+            .ok()
+            .and_then(|width| width.checked_mul(usize::try_from(HEIGHT).ok()?))
+            .and_then(|pixels| pixels.checked_mul(4))
+            .context("video frame size overflow")?;
+
+        for sequence in 0..FRAME_RATE * 5 {
+            let timestamp = Duration::from_nanos(
+                u64::from(sequence) * (1_000_000_000 / u64::from(FRAME_RATE)),
             );
-            for sample in 0..samples_per_channel {
-                let t =
-                    (sequence * (SAMPLE_RATE / FRAME_RATE) + sample) as f32 / SAMPLE_RATE as f32;
-                let value = (t * 440.0 * std::f32::consts::TAU).sin() * 0.1;
-                samples.extend([value, value]);
-            }
-            let block = AudioBlock::new(
-                SAMPLE_RATE,
-                CHANNELS,
-                timestamp,
-                Some(u64::from(sequence / 3) * u64::from(samples_per_channel)),
-                samples,
+            let frame = VideoFrame::new(
+                VideoFrameMetadata {
+                    width: WIDTH,
+                    height: HEIGHT,
+                    stride: WIDTH.checked_mul(4).context("video stride overflow")?,
+                    pixel_format: PixelFormat::Bgra8,
+                    timestamp,
+                    sequence: u64::from(sequence),
+                },
+                synthetic_frame(frame_bytes, sequence),
             )
-            .map_err(|error| anyhow::anyhow!("creating owned test audio block: {error:?}"))?;
+            .map_err(|error| anyhow::anyhow!("creating owned test video frame: {error:?}"))?;
 
-            let mut audio_buffer = gst::Buffer::from_mut_slice(f32le_bytes(&block.samples));
+            let mut buffer = gst::Buffer::from_mut_slice(frame.data);
             {
-                let audio_ref = audio_buffer.get_mut().context("audio buffer is shared")?;
-                audio_ref.set_pts(gst::ClockTime::from_nseconds(timestamp.as_nanos() as u64));
-                audio_ref.set_duration(gst::ClockTime::from_nseconds(
-                    u64::from(samples_per_channel) * 1_000_000_000 / u64::from(SAMPLE_RATE),
-                ));
+                let buffer_ref = buffer.get_mut().context("video buffer is shared")?;
+                buffer_ref.set_pts(gst::ClockTime::from_nseconds(timestamp.as_nanos() as u64));
+                buffer_ref.set_duration(frame_duration);
+                buffer_ref.set_offset(u64::from(sequence));
             }
-            audio_source
-                .push_buffer(audio_buffer)
-                .context("pushing audio block")?;
-        }
-    }
+            // Video uses drop-newest when overloaded. The counter makes every
+            // dropped frame observable; this PoC's synthetic run reports it.
+            let _ = producer.try_push(MediaPacket::Video(buffer));
 
-    video_source
-        .end_of_stream()
-        .context("ending video stream")?;
-    audio_source
-        .end_of_stream()
-        .context("ending audio stream")?;
+            if sequence % 3 == 0 {
+                let samples_per_channel = (SAMPLE_RATE / FRAME_RATE) * 3;
+                let mut samples = Vec::with_capacity(
+                    usize::try_from(samples_per_channel).unwrap_or_default()
+                        * usize::from(CHANNELS),
+                );
+                for sample in 0..samples_per_channel {
+                    let t = (sequence * (SAMPLE_RATE / FRAME_RATE) + sample) as f32
+                        / SAMPLE_RATE as f32;
+                    let value = (t * 440.0 * std::f32::consts::TAU).sin() * 0.1;
+                    samples.extend([value, value]);
+                }
+                let block = AudioBlock::new(
+                    SAMPLE_RATE,
+                    CHANNELS,
+                    timestamp,
+                    Some(u64::from(sequence / 3) * u64::from(samples_per_channel)),
+                    samples,
+                )
+                .map_err(|error| anyhow::anyhow!("creating owned test audio block: {error:?}"))?;
+
+                let mut audio_buffer = gst::Buffer::from_mut_slice(f32le_bytes(&block.samples));
+                {
+                    let audio_ref = audio_buffer.get_mut().context("audio buffer is shared")?;
+                    audio_ref.set_pts(gst::ClockTime::from_nseconds(timestamp.as_nanos() as u64));
+                    audio_ref.set_duration(gst::ClockTime::from_nseconds(
+                        u64::from(samples_per_channel) * 1_000_000_000
+                            / u64::from(SAMPLE_RATE),
+                    ));
+                }
+                producer
+                    .try_push(MediaPacket::Audio(audio_buffer))
+                    .map_err(|_| anyhow::anyhow!("audio queue overloaded; audio gap is fatal"))?;
+            }
+        }
+
+        // The terminal marker is control data: retry off the real-time path
+        // until the consumer has made room. No audio/video payload is blocked.
+        loop {
+            match producer.try_push(MediaPacket::End) {
+                Ok(()) => break,
+                Err(MediaPacket::End) => thread::yield_now(),
+                Err(_) => unreachable!("only the terminal marker is sent here"),
+            }
+        }
+        Ok(())
+    });
+
+    let producer_result = producer_worker
+        .join()
+        .map_err(|_| anyhow::anyhow!("synthetic media producer panicked"))?;
+    let consumer_result = consumer_worker
+        .join()
+        .map_err(|_| anyhow::anyhow!("media pipeline worker panicked"))?;
+    consumer_result?;
+    producer_result?;
+
+    let metrics = metrics_handle.metrics();
+    println!(
+        "Media queue: capacity={}, high-water={}, accepted={}, rejected={}",
+        metrics.capacity, metrics.high_watermark, metrics.accepted, metrics.rejected
+    );
     Ok(())
 }
 
