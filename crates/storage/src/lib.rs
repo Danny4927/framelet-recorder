@@ -83,6 +83,43 @@ impl FileSystemRecordingStorage {
             self.output_directory.join(format!("{stem}.framelet")),
         )
     }
+
+    fn reserve_candidate(
+        &self,
+        recording_id: RecordingId,
+        first_sequence: u64,
+    ) -> Result<(u64, PathBuf, PathBuf), PortError> {
+        let mut sequence = first_sequence;
+        loop {
+            let (temporary_path, final_path) = self.paths(recording_id, sequence);
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary_path)
+            {
+                Ok(mut reservation) => {
+                    if let Err(error) = reservation.flush().and_then(|()| reservation.sync_all()) {
+                        drop(reservation);
+                        let cleanup = fs::remove_file(&temporary_path);
+                        return match cleanup {
+                            Ok(()) => Err(map_io_error(error)),
+                            Err(cleanup_error) => Err(PortError::Failed(format!(
+                                "could not sync temporary recording ({error}); cleanup also failed ({cleanup_error})"
+                            ))),
+                        };
+                    }
+                    drop(reservation);
+                    return Ok((sequence, temporary_path, final_path));
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    sequence = sequence.checked_add(1).ok_or_else(|| {
+                        PortError::Failed("storage session identity exhausted".into())
+                    })?;
+                }
+                Err(error) => return Err(map_io_error(error)),
+            }
+        }
+    }
 }
 
 impl RecordingStoragePort for FileSystemRecordingStorage {
@@ -92,32 +129,12 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         _configuration: &RecordingConfiguration,
     ) -> Result<MediaSessionId, PortError> {
         let sequence = self.next_session;
-        self.next_session = self
-            .next_session
-            .checked_add(1)
-            .ok_or_else(|| PortError::Failed("storage session identity exhausted".into()))?;
         let session = MediaSessionId::new(format!("filesystem-{sequence}"))?;
-        let (temporary_path, final_path) = self.paths(recording_id, sequence);
-
-        // Exclusive creation is the collision-safe reservation; never truncate.
-        let mut reservation = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary_path)
-            .map_err(map_io_error)?;
-
-        // If syncing the reservation fails, do not leave an untracked candidate.
-        if let Err(error) = reservation.flush().and_then(|()| reservation.sync_all()) {
-            drop(reservation);
-            let cleanup_result = fs::remove_file(&temporary_path);
-            return match cleanup_result {
-                Ok(()) => Err(map_io_error(error)),
-                Err(cleanup_error) => Err(PortError::Failed(format!(
-                    "could not sync temporary recording ({error}); cleanup also failed ({cleanup_error})"
-                ))),
-            };
-        }
-        drop(reservation);
+        let (reserved_sequence, temporary_path, final_path) =
+            self.reserve_candidate(recording_id, sequence)?;
+        self.next_session = reserved_sequence.checked_add(1).ok_or_else(|| {
+            PortError::Failed("storage session identity exhausted".into())
+        })?;
 
         self.active.insert(
             session.clone(),
