@@ -1,31 +1,31 @@
 #![forbid(unsafe_code)]
-//! Isolated CPAL microphone capture experiment.
-
-use std::sync::Arc;
-use std::time::Duration;
-
-use cpal::traits::DeviceTrait;
-
-/// Builds an F32 input stream that copies into a preallocated ring buffer.
-///
-/// The callback performs no allocation, locking, waiting, or I/O.
-pub fn build_f32_stream(
-    device: &cpal::Device,
-    config: cpal::StreamConfig,
-    ring: Arc<AudioSampleRing>,
-    on_error: impl FnMut(cpal::Error) + Send + 'static,
-) -> Result<cpal::Stream, String> {
-    device
-        .build_input_stream(
-            config,
-            move |samples: &[f32], _info: &cpal::InputCallbackInfo| {
-                ring.push_from_callback(samples);
-            },
-            on_error,
-            Some(Duration::from_secs(1)),
-        )
-        .map_err(|error| error.to_string())
-}
+//! Isolated CPAL microphone capture components for evaluation.
 
 pub mod ring;
-pub use ring::{AudioSampleRing, RingBufferError};
+pub mod wav;
+
+pub use ring::AudioSampleRing;
+pub use wav::{WavWriter, WavWriterError};
+
+use std::sync::Arc;
+use cpal::traits::DeviceTrait;
+use cpal::{Data, InputCallbackInfo, Stream, StreamConfig};
+
+/// Builds an F32 input stream feeding a preallocated bounded ring buffer.
+pub fn build_f32_stream(
+    device: &cpal::Device,
+    config: StreamConfig,
+    ring: Arc<AudioSampleRing>,
+    callback_error: impl FnMut(cpal::StreamError) + Send + 'static,
+) -> Result<Stream, cpal::BuildStreamError> {
+    device.build_input_stream(
+        &config,
+        move |data: &Data, _info: &InputCallbackInfo| {
+            if let Some(samples) = data.as_slice::<f32>() {
+                let _ = ring.push_from_callback(samples);
+            }
+        },
+        callback_error,
+        None,
+    )
+}
