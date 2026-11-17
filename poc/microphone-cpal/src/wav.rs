@@ -70,7 +70,9 @@ impl WavWriter {
         }
         let align = channels
             .checked_mul(4)
-            .ok_or(WavWriterError::UnsupportedFormat("block alignment overflow"))?;
+            .ok_or(WavWriterError::UnsupportedFormat(
+                "block alignment overflow",
+            ))?;
         let byte_rate = sample_rate
             .checked_mul(u32::from(align))
             .ok_or(WavWriterError::UnsupportedFormat("byte rate overflow"))?;
@@ -123,8 +125,7 @@ impl WavWriter {
     pub fn finalize(mut self) -> Result<PathBuf, WavWriterError> {
         let riff_size =
             u32::try_from(36 + self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
-        let data_size =
-            u32::try_from(self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
+        let data_size = u32::try_from(self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
         self.file.seek(SeekFrom::Start(4))?;
         self.file.write_all(&riff_size.to_le_bytes())?;
         self.file.seek(SeekFrom::Start(40))?;
@@ -165,8 +166,7 @@ mod tests {
     }
 
     fn block(rate: u32, channels: u16, samples: Vec<f32>) -> AudioBlock {
-        AudioBlock::new(rate, channels, Duration::ZERO, Some(0), samples)
-            .expect("valid test block")
+        AudioBlock::new(rate, channels, Duration::ZERO, Some(0), samples).expect("valid test block")
     }
 
     #[test]
