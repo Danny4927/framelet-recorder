@@ -30,7 +30,9 @@ fn scan_recovery(directory: PathBuf) -> Result<Vec<PathBuf>, PortError> {
 fn apply_recovery_result(window: &MainWindow, result: Result<Vec<PathBuf>, PortError>) {
     match result {
         Ok(files) => {
-            window.set_recovery_message(format!("{} temporäre Datei(en) gefunden", files.len()).into());
+            window.set_recovery_message(
+                format!("{} temporäre Datei(en) gefunden", files.len()).into(),
+            );
             window.set_status_message(if files.is_empty() {
                 "Keine verwaisten temporären Dateien gefunden.".into()
             } else {
@@ -74,7 +76,9 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let output_directory = default_output_directory();
     window.set_output_directory(display_path(&output_directory).into());
-    window.set_status_message("Speicherort wird geprüft; Aufnahme-Backend noch nicht verfügbar.".into());
+    window.set_status_message(
+        "Speicherort wird geprüft; Aufnahme-Backend noch nicht verfügbar.".into(),
+    );
 
     {
         let weak = window.as_weak();
