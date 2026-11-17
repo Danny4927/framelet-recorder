@@ -16,7 +16,7 @@ pub fn build_f32_stream(
     on_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream, cpal::BuildStreamError> {
     device.build_input_stream(
-        &config,
+        config,
         move |samples: &[f32], _info: &cpal::InputCallbackInfo| {
             ring.push_from_callback(samples);
         },
