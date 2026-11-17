@@ -8,5 +8,7 @@ publish = false
 [workspace]
 
 [dependencies]
+framelet-capture-api = { path = "../../crates/capture-api" }
+lamco-pipewire = { version = "=0.8.4", default-features = false, features = [] }
 lamco-wayland = { version = "=0.8.4", default-features = false, features = ["portal"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

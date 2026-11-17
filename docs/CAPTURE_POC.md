@@ -1,6 +1,6 @@
 # Capture PoC — backend evaluation
 
-**Status:** Milestone 1 portal lifecycle smoke test is implemented. Milestone 2 frame delivery is blocked pending a verified safe PipeWire receive path. No capture backend is approved for production.
+**Status:** Milestone 2 implementation added in an isolated PoC: portal selection plus CPU-backed PipeWire frame reception and validation. Compilation, automated tests, and real KDE device behavior must be verified before considering the backend for production.
 
 The MVP remains limited to screen, microphone, webcam, and screen + webcam. No system audio, network upload, or macOS.
 
@@ -8,53 +8,51 @@ The MVP remains limited to screen, microphone, webcam, and screen + webcam. No s
 
 | Capability | Candidate | Evidence / current assessment | Decision |
 |---|---|---|---|
-| Linux Wayland portal | lamco-wayland 0.8.4, portal-only feature | Portal manager/session API; MIT OR Apache-2.0; upstream lists GNOME, KDE, wlroots as tested | Isolated milestone-1 PoC; not production-approved |
-| Linux Wayland frames | lamco-pipewire 0.8.4 | Exact tagged source inspection found `PipeWireManager::create_stream` drops the frame-channel sender (`let (_tx, rx) = ...`) and leaves a TODO to connect it to the PipeWire thread. The public `frame_receiver` therefore cannot receive frames through this path. Lower-level thread API contains explicit unsafe internals and raw-FD ownership handling. | Manager receiver rejected; lower-level safe API review required |
+| Linux Wayland portal | lamco-wayland 0.8.4, portal-only feature | Portal manager/session API; MIT OR Apache-2.0; upstream lists GNOME, KDE, wlroots as tested | Isolated PoC |
+| Linux Wayland frames | lamco-pipewire 0.8.4 | Manager receiver rejected: `create_stream` drops its sender. Lower-level `PipeWireThreadManager` provides bounded frame channel, explicit receive methods, and a dedicated PipeWire thread. Its raw-FD ownership and third-party unsafe internals are documented in ADR-0007. | Isolated milestone-2 PoC; production approval pending |
 | Linux X11 screen | Separate X11 adapter | Different security/capture model; lamco-wayland is Wayland-only | Deferred |
 | Windows screen | Windows Graphics Capture via safe Rust wrapper | Public safe API and FFI/unsafe boundary must be verified | Research/PoC pending |
 | Microphone | CPAL 0.18.2 | Callback is high-priority; bounded handling required | Candidate; callback/ring-buffer PoC pending |
 | Webcam | nokhwa 0.10.11 | Device, backend, permissions, and formats need validation | Candidate; device PoC pending |
 
-### lamco-pipewire 0.8.4 source review
+## Wayland milestone 2 — PipeWire frame reception
 
-The review is pinned to upstream tag `v0.8.4`, not an unpinned branch:
+The isolated `poc/wayland-portal` package now:
 
-- In `crates/lamco-pipewire/src/manager.rs`, `PipeWireManager::create_stream` creates a Tokio channel as `let (_tx, rx) = mpsc::channel(...)`, stores `rx`, and returns a stream handle. The sender is dropped immediately.
-- The same method contains a TODO to wire the sender to the PipeWire-thread bridge.
-- `frame_receiver` removes and returns that receiver. It cannot receive frames through this manager path because its sender has already been dropped.
-- `crates/lamco-pipewire/src/pw_thread.rs` has a separate bounded synchronous frame channel and a lower-level receive path. It also contains explicit unsafe code, including an `unsafe impl Send` for a DMA-BUF mmap pointer wrapper. This is third-party code, not Framelet code, but it is a required safety-review boundary.
-- The lower-level API has raw file-descriptor ownership semantics. Do not pass a portal FD into it until ownership transfer and drop/teardown behavior are verified against the exact pinned source.
+1. Opens the XDG portal source picker on explicit `--start`.
+2. Keeps the portal session alive and selects its first returned stream.
+3. Transfers the portal-provided PipeWire FD to `PipeWireThreadManager` according to the upstream ownership contract.
+4. Requests CPU-backed buffers and creates one PipeWire stream.
+5. Receives frames through the lower-level manager's bounded frame queue with a five-second per-frame timeout.
+6. Rejects DMA-BUF, corrupted/incomplete, unsupported formats, invalid dimensions/stride, and short buffers.
+7. Converts BGRA/BGRx/RGBA/RGBx packed 32-bit pixels into owned Framelet BGRA `VideoFrame` values and validates them through `framelet-capture-api`.
+8. Stops after the requested number of frames and shuts down the PipeWire thread.
 
-**Decision:** Do not use `PipeWireManager::frame_receiver` as a working capture source. Do not report success from connection/stream creation alone. Do not write custom unsafe FFI. See [ADR-0007](architecture/adr/ADR-0007-lamco-pipewire-frame-delivery.md).
-
-### Required next technical step
-
-Review the exact public lower-level API in `PipeWireThreadManager`: FD ownership, stream creation/destruction, bounded receive channel, async wake-up/timeout behavior, and frame buffer variants. If it passes review, implement the adapter in the isolated PoC and convert only validated CPU-resident supported pixel formats to Framelet-owned `VideoFrame`. Reject unsupported DMA-BUF or pixel formats explicitly; do not reinterpret them as packed BGRA. If the safe API is insufficient, request an upstream fix or select another backend.
-
-### Other dependency review status
-
-The previous review of CPAL and nokhwa is preliminary documentation research, not a source-level unsafe audit or RustSec/lockfile review. Exact resolved transitive versions and native dependencies must be recorded after the PoC lockfile is generated.
-
-## Wayland portal PoC — milestone 1
-
-See [poc/wayland-portal](../poc/wayland-portal/README.md). The isolated package is outside the production workspace. It opens no dialog unless explicitly invoked with `--start`. It creates an XDG portal session, reports selected stream count, and drops the session. It does not consume PipeWire frames or save media.
-
-Commands:
+Run:
 
 ~~~bash
 cargo check --manifest-path poc/wayland-portal/Cargo.toml
-cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start
+cargo test --manifest-path poc/wayland-portal/Cargo.toml
+cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start --frames 120
 ~~~
 
-## Framelet capture-api contract
+The default target is 120 validated frames. This is a frame-delivery smoke test only: it does not mux or save a recording, does not implement long-running cancellation, and does not establish A/V clock synchronization. See [the PoC README](../poc/wayland-portal/README.md).
 
-The production workspace has safe owned `VideoFrame` and `AudioBlock` values, explicit source kinds, and checked validation for dimensions, stride, buffer length, sample rate, channel count, and interleaved audio sample count. The first video formats are packed BGRA8/RGBA8. Streaming transport, bounded ring-buffer implementation, PipeWire frame conversion, and source-clock mapping remain PoC work.
+## Dependency and safety boundary
+
+- Framelet first-party code remains `#![forbid(unsafe_code)]`.
+- `lamco-pipewire` contains third-party unsafe/FFI code. The direct manager API uses a raw FD and reconstructs ownership internally; this depends on the portal library's documented transfer semantics. This is a dependency safety boundary, not a claim that the dependency graph is unsafe-free.
+- The PipeWire frame queue is bounded by the dependency. The PoC does not add another unbounded queue.
+- Only CPU-resident packed 32-bit formats are accepted. DMA-BUF and non-packed formats fail explicitly.
+- The exact upstream source version is pinned at `v0.8.4`; update/review it before changing the version.
+- The PoC does not yet commit a generated Cargo.lock. Locked/reproducible build and RustSec/license checks remain release gates.
 
 ## Real-device matrix
 
 | Test | Windows 10/11 | Linux Wayland GNOME | Linux Wayland KDE | Linux X11 |
 |---|---:|---:|---:|---:|
 | Portal/source selection | N/A | Pending | Pending | Deferred |
+| Actual frame delivery, 120 frames | N/A | Pending | Pending | Deferred |
 | Screen capture 1080p30 for 10 min | Pending | Pending | Pending | Deferred |
 | Microphone enumeration and 48 kHz capture | Pending | Pending | Pending | Pending |
 | Webcam enumeration and 720p30 capture | Pending | Pending | Pending | Pending |

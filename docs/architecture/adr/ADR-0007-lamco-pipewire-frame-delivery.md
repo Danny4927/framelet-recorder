@@ -1,50 +1,52 @@
-# ADR-0007 — Do not use the lamco-pipewire 0.8.4 manager frame receiver
+# ADR-0007 — PipeWire frame delivery through the lower-level thread manager
 
-**Status:** Accepted for PoC; production backend remains unapproved  
+**Status:** Accepted for isolated PoC; production backend remains unapproved  
 **Date:** 3 November 2026
 
 ## Context
 
-ADR-0006 selected `lamco-wayland` 0.8.4 for an isolated portal-only smoke test. The next milestone is actual screen-frame delivery from the portal-provided PipeWire connection.
+ADR-0006 selected `lamco-wayland` 0.8.4 for an isolated portal smoke test. Source inspection of the exact upstream `v0.8.4` tag showed that `PipeWireManager::create_stream` creates a Tokio channel but binds its sender as `_tx`, immediately dropping it. Its `frame_receiver` cannot deliver frames through this path.
 
-The crate's public `PipeWireManager` API advertises `frame_receiver(stream_id)`. A source inspection of the exact `v0.8.4` tag shows that `create_stream` creates a bounded Tokio channel but binds its sender as `_tx`, immediately dropping it. The receiver is stored and returned to callers, but no producer can send frames into that channel. The same method contains a TODO stating that the sender is not wired to the PipeWire-thread bridge.
+The same release exposes `PipeWireThreadManager`, a lower-level API with a bounded synchronous frame channel, `try_recv_frame`, `recv_frame_timeout`, and `frame_notify`. It confines PipeWire's non-Send objects to a dedicated thread. The implementation contains third-party unsafe/FFI internals, including raw-FD reconstruction and unsafe Send implementations for an mmap pointer wrapper.
 
-The PipeWire thread implementation has a separate frame channel and a public thread-manager surface, but uses raw file-descriptor ownership internally and contains explicit unsafe implementations (including `unsafe impl Send` for a cached mmap pointer wrapper). Third-party unsafe code is not automatically disallowed, but it requires a source-level safety review; Framelet itself must remain `#![forbid(unsafe_code)]`.
+The portal session handle documents that its PipeWire FD ownership is transferred to the session handle (not closed when that handle drops) and then to the PipeWire thread manager. The thread manager accepts a `RawFd` and reconstructs an `OwnedFd` internally. This ownership transfer must remain explicit and the portal session must remain alive while capture is active.
 
 ## Decision
 
-1. Do not integrate `PipeWireManager::frame_receiver` from lamco-pipewire 0.8.4 as a working frame source.
-2. Do not treat successful `connect`, `create_stream`, or `frame_receiver` calls as evidence of frame delivery.
-3. Do not patch around the missing sender with first-party unsafe code or an undocumented fork.
-4. Continue evaluating the lower-level public thread-manager API only after verifying its exact FD ownership contract, frame wake-up/receive API, bounded-queue behavior, stream teardown, and supported pixel-buffer representations.
-5. If that lower-level API cannot satisfy the safe ownership and lifecycle contract, request an upstream fix or select another maintained safe abstraction. Keep the Wayland frame backend unapproved until a real KDE/GNOME device test observes actual frames.
+1. Do not use `PipeWireManager::frame_receiver` from lamco-pipewire 0.8.4.
+2. Use `PipeWireThreadManager` only inside the isolated Linux PoC, after explicit source review of its FD ownership, bounded receive API, stream lifecycle, and third-party unsafe boundary.
+3. Request CPU-backed buffers and reject DMA-BUF frames in this PoC. Do not attempt to map GPU memory in Framelet.
+4. Accept only packed BGRA, BGRx, RGBA, and RGBx 32-bit frames. Convert to owned Framelet BGRA frames with checked dimensions, stride, buffer length, and arithmetic. Reject all other formats explicitly.
+5. Keep all first-party Rust under `#![forbid(unsafe_code)]`. Do not add handwritten FFI, raw pointers, or unsafe wrappers.
+6. Keep the backend unapproved for production until CI, RustSec/license review, actual KDE/GNOME device tests, teardown, and sustained capture tests pass.
 
 ## Alternatives considered
 
-- **Use `PipeWireManager::frame_receiver`:** rejected; the receiver's sender is dropped in the pinned source.
-- **Write a direct PipeWire adapter with custom FFI:** rejected by Framelet's non-negotiable safety policy.
-- **Use `PipeWireThreadManager` directly:** remains a PoC candidate, not yet accepted; requires review of FD transfer, public receive APIs, queue bounds, and dependency unsafe code.
-- **Wait for upstream repair:** acceptable fallback if the lower-level API does not pass review.
+- **Use `PipeWireManager::frame_receiver`:** rejected; sender is dropped in the pinned source.
+- **Use `PipeWireThreadManager`:** accepted for isolated PoC only; has the necessary bounded frame receive API but carries a third-party unsafe/FD ownership boundary.
+- **Write direct PipeWire FFI in Framelet:** rejected by the project's safety policy.
+- **Wait for upstream manager repair:** remains an option if lower-level lifecycle or dependency review fails.
 
 ## Consequences
 
-- Portal selection remains a valid milestone-1 test, but milestone 2 is blocked on a verified frame-delivery path.
-- The current PoC must not print or report a successful capture result merely because a PipeWire stream was created.
-- The exact dependency source and reviewed version must be pinned; re-audit on every update.
-- A successful CI compile remains distinct from actual frame delivery on KDE Plasma Wayland.
+- The PoC can now attempt real frame delivery without adding first-party unsafe Rust.
+- The dependency graph is not claimed to be unsafe-free. The lower-level crate's unsafe internals require version-pinned review.
+- The PoC intentionally handles CPU buffers only; DMA-BUF and non-packed formats are unsupported.
+- No recording file is produced and no production capture adapter is added.
+- CI success is not equivalent to a successful KDE desktop capture test.
 
-## Validation required before reconsidering
+## Validation required before production adoption
 
-- Locked build against the exact reviewed crate version.
-- Automated test proving the receive path obtains a frame or times out/fails explicitly; no silent empty receiver.
-- Validate dimensions, stride, pixel format, buffer length, timestamp and sequence before creating Framelet-owned `VideoFrame`.
-- Demonstrate bounded frame transport and a documented overflow/drop counter.
-- Exercise cancellation, portal closure, stream removal, and manager shutdown.
-- Inspect unsafe/FFI and FD ownership in the exact dependency source and run RustSec/license checks.
-- Run the real-device matrix on KDE Plasma Wayland and record actual frame metadata.
+- Locked build and committed PoC Cargo.lock.
+- Automated conversion/layout tests and CI.
+- RustSec, license, native library, transitive dependency, and source-level unsafe/FFI review.
+- Actual KDE Plasma Wayland test proving frames arrive and are validated.
+- Cancellation, portal closure, stream removal, display unplug, and manager shutdown tests.
+- Ten-minute sustained capture with bounded memory, frame-rate/drop metrics, and clean shutdown.
+- A/V clock mapping and encoder integration are separate future milestones.
 
 ## References
 
 - [lamco-pipewire v0.8.4 manager.rs](https://github.com/lamco-admin/lamco-wayland/blob/v0.8.4/crates/lamco-pipewire/src/manager.rs)
 - [lamco-pipewire v0.8.4 pw_thread.rs](https://github.com/lamco-admin/lamco-wayland/blob/v0.8.4/crates/lamco-pipewire/src/pw_thread.rs)
-- [lamco-pipewire v0.8.4 frame.rs](https://github.com/lamco-admin/lamco-wayland/blob/v0.8.4/crates/lamco-pipewire/src/frame.rs)
+- [lamco-portal v0.8.4 session.rs](https://github.com/lamco-admin/lamco-wayland/blob/v0.8.4/crates/lamco-portal/src/session.rs)
