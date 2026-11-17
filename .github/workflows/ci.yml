@@ -41,6 +41,8 @@ jobs:
         run: cargo clippy --manifest-path poc/microphone-cpal/Cargo.toml --all-targets -- -D warnings
       - name: Format isolated microphone capture PoC
         run: cargo fmt --manifest-path poc/microphone-cpal/Cargo.toml -- --check
+      - name: Test microphone ring concurrency model
+        run: cargo test --manifest-path poc/microphone-cpal/Cargo.toml --lib loom_tests
       - name: Verify visual regression baseline
         env:
           FRAMELET_RUN_VISUAL_TESTS: "1"
