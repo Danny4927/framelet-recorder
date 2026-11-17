@@ -9,10 +9,8 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
-use framelet_core::{
-    MediaSessionId, PortError, RecordingArtifact, RecordingConfiguration, RecordingId,
-    RecordingStoragePort,
-};
+use framelet_core::ports::{MediaSessionId, PortError, RecordingStoragePort};
+use framelet_core::{RecordingArtifact, RecordingConfiguration, RecordingId};
 
 /// Filesystem-backed implementation of the core-owned storage port.
 ///
