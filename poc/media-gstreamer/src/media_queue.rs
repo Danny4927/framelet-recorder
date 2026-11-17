@@ -123,6 +123,7 @@ impl<T> MediaConsumer<T> {
         }
     }
 
+    #[cfg(test)]
     pub fn try_pop(&self) -> Option<T> {
         match self.receiver.try_recv() {
             Ok(item) => {
@@ -133,6 +134,7 @@ impl<T> MediaConsumer<T> {
         }
     }
 
+    #[cfg(test)]
     pub fn metrics(&self) -> QueueMetricsSnapshot {
         snapshot(&self.metrics)
     }
