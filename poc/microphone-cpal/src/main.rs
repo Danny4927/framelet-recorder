@@ -1,7 +1,6 @@
 #![forbid(unsafe_code)]
 
 use std::error::Error;
-use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -92,18 +91,8 @@ fn parse_output(args: &[String]) -> Result<PathBuf, Box<dyn Error>> {
             format!("framelet-recording-{timestamp}-{suffix}.wav")
         };
         let candidate = PathBuf::from(name);
-        match OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&candidate)
-        {
-            Ok(file) => {
-                drop(file);
-                std::fs::remove_file(&candidate)?;
-                return Ok(candidate);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(error) => return Err(error.into()),
+        if !candidate.exists() {
+            return Ok(candidate);
         }
     }
     Err("unable to choose a unique default output path".into())
@@ -244,5 +233,51 @@ fn consume_available_blocks(
             .ok_or("audio sample position overflow")?;
         *block_count = block_count.saturating_add(1);
         debug_assert_eq!(block.frame_count(), frames);
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_owned()).collect()
+    }
+
+    #[test]
+    fn duration_defaults_to_ten_seconds() {
+        assert_eq!(parse_duration(&args(&[])).expect("default duration"), DEFAULT_DURATION);
+    }
+
+    #[test]
+    fn duration_rejects_zero_and_non_numeric_values() {
+        assert!(parse_duration(&args(&["--duration-seconds", "0"])).is_err());
+        assert!(parse_duration(&args(&["--duration-seconds", "fast"])).is_err());
+    }
+
+    #[test]
+    fn duration_accepts_positive_integer() {
+        assert_eq!(
+            parse_duration(&args(&["--duration-seconds", "17"])).expect("duration"),
+            Duration::from_secs(17)
+        );
+    }
+
+    #[test]
+    fn output_requires_a_non_empty_path() {
+        assert!(parse_output(&args(&["--output"])).is_err());
+        assert!(parse_output(&args(&["--output", "  "])).is_err());
+        assert_eq!(
+            parse_output(&args(&["--output", "capture.wav"])).expect("path"),
+            PathBuf::from("capture.wav")
+        );
+    }
+
+    #[test]
+    fn generated_output_path_is_a_candidate_not_a_reserved_file() {
+        let path = parse_output(&args(&[])).expect("generated path");
+        assert!(path.file_name().is_some());
+        assert!(path.to_string_lossy().ends_with(".wav"));
     }
 }
