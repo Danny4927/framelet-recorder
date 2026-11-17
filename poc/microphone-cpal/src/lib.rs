@@ -14,15 +14,17 @@ pub fn build_f32_stream(
     config: cpal::StreamConfig,
     ring: Arc<AudioSampleRing>,
     on_error: impl FnMut(cpal::Error) + Send + 'static,
-) -> Result<cpal::Stream, cpal::BuildStreamError> {
-    device.build_input_stream(
-        config,
-        move |samples: &[f32], _info: &cpal::InputCallbackInfo| {
-            ring.push_from_callback(samples);
-        },
-        on_error,
-        Some(Duration::from_secs(1)),
-    )
+) -> Result<cpal::Stream, String> {
+    device
+        .build_input_stream(
+            config,
+            move |samples: &[f32], _info: &cpal::InputCallbackInfo| {
+                ring.push_from_callback(samples);
+            },
+            on_error,
+            Some(Duration::from_secs(1)),
+        )
+        .map_err(|error| error.to_string())
 }
 
 pub mod ring;
