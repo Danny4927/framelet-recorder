@@ -8,7 +8,6 @@ pub use ring::AudioSampleRing;
 pub use wav::{WavWriter, WavWriterError};
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use cpal::traits::DeviceTrait;
 use cpal::{InputCallbackInfo, Stream, StreamConfig};
 
@@ -19,18 +18,13 @@ pub fn build_f32_stream(
     ring: Arc<AudioSampleRing>,
     callback_error: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<Stream, String> {
-    let callback_failed = Arc::new(AtomicBool::new(false));
-    let callback_failed_data = Arc::clone(&callback_failed);
     device.build_input_stream(
         config,
-        move |data: &Data, _info: &InputCallbackInfo| {
-            if let Some(samples) = data.as_slice::<f32>() {
-                let _ = ring.push_from_callback(samples);
-            } else {
-                callback_failed_data.store(true, Ordering::Release);
-            }
+        move |samples: &[f32], _info: &InputCallbackInfo| {
+            let _ = ring.push_from_callback(samples);
         },
         callback_error,
         None,
-    ).map_err(|error| error.to_string())
+    )
+    .map_err(|error| error.to_string())
 }
