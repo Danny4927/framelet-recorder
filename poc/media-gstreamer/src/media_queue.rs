@@ -118,7 +118,9 @@ impl<T> MediaProducer<T> {
             }
         }
 
-        self.metrics.high_watermark.fetch_max(queued + 1, Ordering::Relaxed);
+        self.metrics
+            .high_watermark
+            .fetch_max(queued + 1, Ordering::Relaxed);
         match self.sender.try_send(item) {
             Ok(()) => {
                 self.metrics.accepted.fetch_add(1, Ordering::Relaxed);
@@ -228,10 +230,7 @@ mod tests {
     fn reports_consumer_disconnection_separately_from_queue_full() {
         let (producer, consumer) = bounded(1).expect("positive capacity");
         drop(consumer);
-        assert_eq!(
-            producer.try_push(7),
-            Err(QueueSendError::Disconnected(7))
-        );
+        assert_eq!(producer.try_push(7), Err(QueueSendError::Disconnected(7)));
         assert_eq!(producer.metrics().queued, 0);
     }
 
