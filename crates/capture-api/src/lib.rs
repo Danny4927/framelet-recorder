@@ -403,15 +403,13 @@ mod tests {
         let mut queue = AudioBlockQueue::new(2, 8, 48_000, 2).expect("valid queue");
         let first = AudioBlock::new(48_000, 2, Duration::ZERO, Some(0), vec![1.0, 1.0])
             .expect("first block");
-        let second = AudioBlock::new(
-            48_000, 2, Duration::from_millis(1), Some(1), vec![2.0, 2.0],
-        ).expect("second block");
+        let second = AudioBlock::new(48_000, 2, Duration::from_millis(1), Some(1), vec![2.0, 2.0])
+            .expect("second block");
         queue.try_push(first).expect("first push");
         queue.try_push(second).expect("second push");
 
-        let third = AudioBlock::new(
-            48_000, 2, Duration::from_millis(2), Some(2), vec![3.0, 3.0],
-        ).expect("third block");
+        let third = AudioBlock::new(48_000, 2, Duration::from_millis(2), Some(2), vec![3.0, 3.0])
+            .expect("third block");
         assert_eq!(queue.try_push(third), Err(CaptureError::AudioTransportFull));
         assert_eq!(queue.len(), 2);
         assert_eq!(queue.rejected_blocks(), 1);
@@ -423,23 +421,41 @@ mod tests {
     #[test]
     fn audio_queue_rejects_format_mismatch_and_oversized_blocks() {
         let mut queue = AudioBlockQueue::new(1, 2, 48_000, 2).expect("valid queue");
-        let wrong_rate = AudioBlock::new(44_100, 2, Duration::ZERO, None, vec![0.0, 0.0])
-            .expect("valid block");
-        assert_eq!(queue.try_push(wrong_rate), Err(CaptureError::AudioFormatMismatch));
+        let wrong_rate =
+            AudioBlock::new(44_100, 2, Duration::ZERO, None, vec![0.0, 0.0]).expect("valid block");
+        assert_eq!(
+            queue.try_push(wrong_rate),
+            Err(CaptureError::AudioFormatMismatch)
+        );
 
-        let oversized = AudioBlock::new(48_000, 2, Duration::ZERO, None, vec![0.0; 4])
-            .expect("valid block");
-        assert_eq!(queue.try_push(oversized), Err(CaptureError::AudioBlockTooLarge));
+        let oversized =
+            AudioBlock::new(48_000, 2, Duration::ZERO, None, vec![0.0; 4]).expect("valid block");
+        assert_eq!(
+            queue.try_push(oversized),
+            Err(CaptureError::AudioBlockTooLarge)
+        );
         assert_eq!(queue.len(), 0);
         assert_eq!(queue.rejected_blocks(), 0);
     }
 
     #[test]
     fn audio_queue_rejects_invalid_configuration() {
-        assert_eq!(AudioBlockQueue::new(0, 8, 48_000, 2).err(), Some(CaptureError::InvalidAudioLayout));
-        assert_eq!(AudioBlockQueue::new(1, 0, 48_000, 2).err(), Some(CaptureError::InvalidAudioLayout));
-        assert_eq!(AudioBlockQueue::new(1, 8, 0, 2).err(), Some(CaptureError::InvalidAudioLayout));
-        assert_eq!(AudioBlockQueue::new(1, 8, 48_000, 0).err(), Some(CaptureError::InvalidAudioLayout));
+        assert_eq!(
+            AudioBlockQueue::new(0, 8, 48_000, 2).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
+        assert_eq!(
+            AudioBlockQueue::new(1, 0, 48_000, 2).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
+        assert_eq!(
+            AudioBlockQueue::new(1, 8, 0, 2).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
+        assert_eq!(
+            AudioBlockQueue::new(1, 8, 48_000, 0).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
     }
 
     #[test]
