@@ -173,7 +173,9 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
     );
 
     if callback_failed.load(Ordering::Acquire) {
-        return Err("audio input stream reported a runtime error (device may have disconnected)".into());
+        return Err(
+            "audio input stream reported a runtime error (device may have disconnected)".into(),
+        );
     }
     Ok(())
 }
