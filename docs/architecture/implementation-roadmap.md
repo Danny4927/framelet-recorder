@@ -7,6 +7,10 @@
 
 This roadmap defines the intended implementation order, dependencies, deliverables, and exit criteria. A phase is not complete merely because code compiles: its architectural, behavioral, test, and documentation gates must also pass. Re-plan through an ADR when evidence requires a structural change.
 
+## Planning and tracking policy
+
+The project plan, phase breakdown, progress states, decisions, and open work are maintained as Markdown files in this Git repository (primarily this roadmap, arc42, the specification, and ADRs). **Do not create or maintain GitHub Issues for project planning, tasks, bugs, phase tracking, or backlog management.** Update the relevant Markdown document in the same PR as the implementation change. Pull requests remain the mechanism for proposing, reviewing, and delivering code; they are not a reason to mirror the plan into Issues. Keep the plan usable directly from a repository checkout and readable in GitHub's Markdown renderer.
+
 ## Delivery principle: vertical, UI-testable increments
 
 After the architecture/core foundation, user-visible capabilities MUST be delivered as vertical slices. Each slice connects the real capability through its adapter, core use case, desktop composition root, and Slint UI in the same PR (or a clearly linked, immediately following PR when a dependency gate makes that impossible). Do not accumulate completed backend features that cannot be exercised from the application until a late integration phase.
