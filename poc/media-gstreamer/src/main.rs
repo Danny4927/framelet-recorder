@@ -278,7 +278,7 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
         // The terminal marker is control data: retry off the real-time path
         // until the consumer has made room. No audio/video payload is blocked.
         loop {
-            match producer.try_push(MediaPacket::End) {
+            match producer.try_push_control(MediaPacket::End) {
                 Ok(()) => break,
                 Err(media_queue::QueueSendError::Full(MediaPacket::End)) => thread::yield_now(),
                 Err(media_queue::QueueSendError::Disconnected(MediaPacket::End)) => {
