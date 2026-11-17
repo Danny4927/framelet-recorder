@@ -71,12 +71,13 @@ Domain-Driven Design complements the hexagonal architecture: the domain model an
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
 2. Hexagonal architecture: all inbound and outbound interactions cross application-owned ports; concrete adapters depend inward on core-owned contracts. This is mandatory for every production feature, not only OS capture.
 3. Core-owned lifecycle: one authority coordinates prepare, record, pause, resume, stop, cancel, and finalize.
-4. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
-5. One monotonic media timeline with a common recording origin.
-6. Local transactional output: exclusive temporary file, successful finalization, then collision-safe publication.
-7. Fail visibly: count video drops; detect/report audio loss, disconnects, and finalization errors.
-8. Safe Rust boundary; third-party unsafe internals are reviewed risks.
-9. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
+4. Granular outbound contracts: screen, camera, microphone, media, storage, monotonic clock, settings, session metadata, events, and metrics are separate core-owned ports.
+5. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
+6. One monotonic media timeline with a common recording origin.
+7. Local transactional output: exclusive temporary file, successful finalization, then collision-safe publication.
+8. Fail visibly: count video drops; detect/report audio loss, disconnects, and finalization errors.
+9. Safe Rust boundary; third-party unsafe internals are reviewed risks.
+10. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
 
 ## 5. Building Block View
 
@@ -118,11 +119,11 @@ Create crates only when real code justifies a boundary. No empty placeholder mem
 
 ### 5.3 Hexagonal architecture and dependency rule (binding)
 
-The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities.
+The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities. The Phase 1 CI workflow runs `scripts/check-architecture.py` to reject new direct core dependencies outside the backend-neutral capture contract and to detect imports of known UI/native runtime APIs.
 
 - **Inbound ports:** typed use-case APIs such as PrepareRecording, StartRecording, PauseRecording, ResumeRecording, StopRecording, CancelRecording, and query/state subscriptions.
 - **Inbound adapters:** Slint UI event handlers and future command/automation entry points. They translate external input into inbound-port calls and render returned state/events; they contain no business rules.
-- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, clock, and platform capabilities.
+- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, monotonic clock, session metadata, event publication, and metrics snapshots.
 - **Outbound adapters:** concrete OS/capture, CPAL or future audio backend, camera, media runtime, filesystem, and settings implementations.
 - **Composition root:** constructs adapters and injects them into core use cases. It is the only place allowed to know concrete adapter types.
 
@@ -158,7 +159,7 @@ DDD is the required modeling approach for Framelet's application domain. It work
 **Modeling rules:**
 - Put domain concepts and invariants in `crates/core` (or a clearly separated domain module within the core); keep `capture-api` focused on transport/interoperability contracts rather than becoming a second domain model.
 - Use entities for identity-bearing lifecycle concepts, value objects for validated immutable concepts (for example source identity, recording configuration, media time, and output destination), and aggregates only where a consistency boundary and invariants require them.
-- The recording session is the initial aggregate candidate: its root owns legal lifecycle transitions and invariants such as idempotent stop/cancel semantics and finalization outcome. Confirm or revise this boundary during Phase 1 based on concrete use cases; do not force all devices/media buffers into this aggregate.
+- The recording session is the initial aggregate: its root owns legal lifecycle transitions and invariants such as cancellation semantics and finalization outcome. Device handles and media buffers remain outside the aggregate.
 - Application use cases coordinate domain objects and ports. Adapters own device/codec/filesystem mechanics and map native/persisted types to application-owned contracts.
 - Domain events represent meaningful facts (for example recording started, source lost, audio gap detected, recording finalized); transport notifications are not automatically domain events.
 - Do not introduce repositories, domain services, specifications, factories, or event buses unless a concrete invariant or use case needs them. Persistence abstractions belong at the application port boundary.
@@ -180,6 +181,8 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
+
+The following sequences describe the target interaction across the granular ports. In the Phase 1 implementation, the use-case service is exercised with a fakeable `RecordingResources` facade; concrete screen/camera/microphone/media/storage adapters and the desktop composition root are deliberately not wired yet. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
 
 ### 6.1 Prepare and start
 
