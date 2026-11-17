@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
-//! Opt-in Wayland portal + PipeWire frame-delivery PoC.
+//! Opt-in Wayland portal + PipeWire frame-delivery and lifecycle PoC.
 //!
-//! This intentionally uses CPU-backed buffers only. It never writes captured
-//! pixels to disk and is not part of the production workspace.
+//! CPU-backed frames are validated and discarded; this is not a recorder and
+//! never writes captured pixels or media to disk.
 
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
@@ -18,19 +18,90 @@ use lamco_pipewire::{
 };
 use lamco_wayland::prelude::*;
 
-const DEFAULT_FRAME_COUNT: u64 = 120;
+const DEFAULT_DURATION: Duration = Duration::from_secs(600);
 const FRAME_TIMEOUT: Duration = Duration::from_secs(5);
+const REPORT_INTERVAL: Duration = Duration::from_secs(5);
+const MAX_REJECTED_FRAMES: u64 = 5;
+
+#[derive(Debug, Clone, Copy)]
+struct Options {
+    frame_limit: Option<u64>,
+    duration: Duration,
+}
+
+#[derive(Debug, Default)]
+struct CaptureStats {
+    received: u64,
+    rejected: u64,
+    last_sequence: Option<u64>,
+    sequence_gaps: u64,
+    first_timestamp: Option<Duration>,
+    last_timestamp: Option<Duration>,
+    timestamp_regressions: u64,
+    max_frame_bytes: usize,
+    total_frame_bytes: u128,
+}
+
+impl CaptureStats {
+    fn record(&mut self, frame: &FrameletVideoFrame) {
+        self.received = self.received.saturating_add(1);
+        self.max_frame_bytes = self.max_frame_bytes.max(frame.data.len());
+        self.total_frame_bytes = self
+            .total_frame_bytes
+            .saturating_add(frame.data.len() as u128);
+
+        if let Some(previous) = self.last_sequence
+            && frame.metadata.sequence > previous.saturating_add(1)
+        {
+            self.sequence_gaps = self.sequence_gaps.saturating_add(
+                frame.metadata.sequence.saturating_sub(previous).saturating_sub(1),
+            );
+        }
+        self.last_sequence = Some(frame.metadata.sequence);
+
+        if let Some(previous) = self.last_timestamp {
+            if frame.metadata.timestamp < previous {
+                self.timestamp_regressions = self.timestamp_regressions.saturating_add(1);
+            }
+        } else {
+            self.first_timestamp = Some(frame.metadata.timestamp);
+        }
+        self.last_timestamp = Some(frame.metadata.timestamp);
+    }
+
+    fn report(&self, elapsed: Duration, rejected_buffers: u64, label: &str) {
+        let seconds = elapsed.as_secs_f64().max(f64::EPSILON);
+        let fps = self.received as f64 / seconds;
+        println!(
+            "{label}: {:.1}s, {} validated, {} rejected, {:.1} received FPS,              {} sequence gaps, {} timestamp regressions, {} corrupt PipeWire buffers,              {} MiB owned frame bytes (max frame {} KiB)",
+            elapsed.as_secs_f64(),
+            self.received,
+            self.rejected,
+            fps,
+            self.sequence_gaps,
+            self.timestamp_regressions,
+            rejected_buffers,
+            self.total_frame_bytes / (1024 * 1024),
+            self.max_frame_bytes / 1024,
+        );
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StopReason {
+    FrameTargetReached,
+    DurationReached,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
     if !args.iter().any(|argument| argument == "--start") {
-        eprintln!("This PoC opens the desktop screen-sharing permission dialog.");
-        eprintln!("Run with: cargo run --manifest-path poc/wayland-portal/Cargo.toml -- --start [--frames N]");
+        print_usage();
         return Ok(());
     }
 
-    let frame_limit = parse_frame_limit(&args)?;
+    let options = parse_options(&args)?;
     let portal_manager = PortalManager::with_default().await?;
     let (session, _restore_token) = portal_manager
         .create_session("framelet-wayland-poc".to_owned(), None)
@@ -45,12 +116,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         stream_info.node_id, stream_info.size.0, stream_info.size.1
     );
 
-    // PortalSessionHandle documents that ownership of this FD was transferred
-    // to the portal handle at creation and is transferred to PipeWire here.
-    // PipeWireThreadManager::new takes exclusive ownership and closes it when
-    // its PipeWire core is torn down. No FD duplication or unsafe code here.
+    // PipeWireThreadManager takes ownership of the portal-provided FD.
+    // The portal session is retained until the PipeWire thread is shut down.
     let mut pipewire = PipeWireThreadManager::new(session.pipewire_fd())?;
-
     let config = StreamConfig::new("framelet-screen-poc")
         .with_resolution(stream_info.size.0, stream_info.size.1)
         .with_framerate(30)
@@ -66,73 +134,119 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
     response_rx.recv()??;
 
-    println!("PipeWire stream connected. Waiting for CPU-backed frames...");
-    let started = Instant::now();
-    let mut received = 0_u64;
-    let mut rejected = 0_u64;
+    println!(
+        "PipeWire stream connected. Waiting for frames (duration: {:.0}s, frame target: {}).",
+        options.duration.as_secs_f64(),
+        options.frame_limit.map_or_else(|| "none".to_owned(), |n| n.to_string()),
+    );
 
-    while received < frame_limit {
-        let Some(frame) = pipewire.recv_frame_timeout(FRAME_TIMEOUT) else {
+    let started = Instant::now();
+    let mut last_report = started;
+    let mut stats = CaptureStats::default();
+    let stop_reason = loop {
+        let elapsed = started.elapsed();
+        if elapsed >= options.duration {
+            break StopReason::DurationReached;
+        }
+        if options.frame_limit.is_some_and(|limit| stats.received >= limit) {
+            break StopReason::FrameTargetReached;
+        }
+
+        let remaining = options.duration.saturating_sub(elapsed);
+        let wait = FRAME_TIMEOUT.min(remaining);
+        let Some(pipewire_frame) = pipewire.recv_frame_timeout(wait) else {
+            if started.elapsed() >= options.duration {
+                break StopReason::DurationReached;
+            }
             let corrupt = pipewire.corrupted_buffer_count();
-            return Err(format!(
-                "Timed out waiting for frame {}/{}. Corrupted PipeWire buffers: {}.",
-                received + 1,
-                frame_limit,
-                corrupt
-            )
-            .into());
+            let error = format!(
+                "Timed out waiting for frame after {} validated frames.                  Corrupted PipeWire buffers: {corrupt}.",
+                stats.received
+            );
+            return shutdown_with_error(pipewire, session, error);
         };
 
-        match convert_frame(frame) {
-            Ok(frame) => {
-                received += 1;
-                if received == 1 || received.is_multiple_of(30) || received == frame_limit {
-                    println!(
-                        "Frame {}/{}: {}x{}, stride {}, {:?}, {} bytes, seq {}",
-                        received,
-                        frame_limit,
-                        frame.metadata.width,
-                        frame.metadata.height,
-                        frame.metadata.stride,
-                        frame.metadata.pixel_format,
-                        frame.data.len(),
-                        frame.metadata.sequence
+        match convert_frame(pipewire_frame) {
+            Ok(frame) => stats.record(&frame),
+            Err(reason) => {
+                stats.rejected = stats.rejected.saturating_add(1);
+                eprintln!("Rejected PipeWire frame: {reason}");
+                if stats.rejected >= MAX_REJECTED_FRAMES {
+                    return shutdown_with_error(
+                        pipewire,
+                        session,
+                        format!("{} frames were rejected; stopping the PoC.", stats.rejected),
                     );
                 }
             }
-            Err(reason) => {
-                rejected += 1;
-                eprintln!("Rejected PipeWire frame: {reason}");
-                if rejected >= 5 {
-                    return Err("Five frames were rejected; stopping the PoC.".into());
-                }
-            }
         }
-    }
 
-    println!(
-        "Received and validated {received} frames in {:.2}s; rejected {rejected}.",
-        started.elapsed().as_secs_f64()
-    );
-    println!("No recording file was created.");
+        if last_report.elapsed() >= REPORT_INTERVAL {
+            stats.report(started.elapsed(), pipewire.corrupted_buffer_count(), "Progress");
+            last_report = Instant::now();
+        }
+    };
+
+    let elapsed = started.elapsed();
+    let corrupt = pipewire.corrupted_buffer_count();
+    stats.report(elapsed, corrupt, "Final");
+    println!("Stop reason: {stop_reason:?}. No recording file was created.");
 
     pipewire.shutdown()?;
     drop(session);
+    println!("PipeWire thread shut down and portal session released.");
     Ok(())
 }
 
-fn parse_frame_limit(args: &[String]) -> Result<u64, Box<dyn std::error::Error>> {
-    let Some(index) = args.iter().position(|argument| argument == "--frames") else {
-        return Ok(DEFAULT_FRAME_COUNT);
+fn shutdown_with_error(
+    mut pipewire: PipeWireThreadManager,
+    session: PortalSessionHandle,
+    message: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let shutdown_result = pipewire.shutdown();
+    drop(session);
+    match shutdown_result {
+        Ok(()) => Err(message.into()),
+        Err(shutdown_error) => Err(format!(
+            "{message} PipeWire shutdown also failed: {shutdown_error}"
+        )
+        .into()),
+    }
+}
+
+fn print_usage() {
+    eprintln!("This PoC opens the desktop screen-sharing permission dialog.");
+    eprintln!(
+        "Run with: cargo run --manifest-path poc/wayland-portal/Cargo.toml --          --start [--frames N] [--duration-seconds N]"
+    );
+    eprintln!("Defaults: 120 frames or 600 seconds, whichever occurs first.");
+}
+
+fn parse_options(args: &[String]) -> Result<Options, Box<dyn std::error::Error>> {
+    let frame_limit = parse_positive_option(args, "--frames")?;
+    let duration_seconds = parse_positive_option(args, "--duration-seconds")?;
+    let duration = Duration::from_secs(duration_seconds.unwrap_or(DEFAULT_DURATION.as_secs()));
+    Ok(Options {
+        frame_limit,
+        duration,
+    })
+}
+
+fn parse_positive_option(
+    args: &[String],
+    option: &str,
+) -> Result<Option<u64>, Box<dyn std::error::Error>> {
+    let Some(index) = args.iter().position(|argument| argument == option) else {
+        return Ok(None);
     };
     let value = args
         .get(index + 1)
-        .ok_or("--frames requires a positive integer")?;
-    let count = value.parse::<u64>()?;
-    if count == 0 {
-        return Err("--frames must be greater than zero".into());
+        .ok_or_else(|| format!("{option} requires a positive integer"))?;
+    let parsed = value.parse::<u64>()?;
+    if parsed == 0 {
+        return Err(format!("{option} must be greater than zero").into());
     }
-    Ok(count)
+    Ok(Some(parsed))
 }
 
 fn convert_frame(
@@ -183,9 +297,7 @@ fn convert_frame(
 
     let mut output = vec![0_u8; required_len];
     match frame.format {
-        PipeWirePixelFormat::BGRA => {
-            output.copy_from_slice(&source[..required_len]);
-        }
+        PipeWirePixelFormat::BGRA => output.copy_from_slice(&source[..required_len]),
         PipeWirePixelFormat::BGRx => {
             copy_bgrx_to_bgra(source, &mut output, width, height, frame.stride)?;
         }
@@ -199,9 +311,7 @@ fn convert_frame(
                 frame.format == PipeWirePixelFormat::RGBA,
             )?;
         }
-        other => {
-            return Err(format!("unsupported PipeWire pixel format: {other:?}"));
-        }
+        other => return Err(format!("unsupported PipeWire pixel format: {other:?}")),
     }
 
     let metadata = VideoFrameMetadata {
@@ -212,7 +322,8 @@ fn convert_frame(
         timestamp: Duration::from_nanos(frame.pts),
         sequence: frame.frame_id,
     };
-    FrameletVideoFrame::new(metadata, output).map_err(|error| format!("Framelet validation failed: {error:?}"))
+    FrameletVideoFrame::new(metadata, output)
+        .map_err(|error| format!("Framelet validation failed: {error:?}"))
 }
 
 fn copy_bgrx_to_bgra(
@@ -284,6 +395,42 @@ mod tests {
     use super::*;
 
     #[test]
+    fn parses_defaults() {
+        let parsed = parse_options(&["poc".to_owned(), "--start".to_owned()])
+            .expect("valid defaults");
+        assert_eq!(parsed.frame_limit, None);
+        assert_eq!(parsed.duration, Duration::from_secs(600));
+    }
+
+    #[test]
+    fn parses_both_limits() {
+        let parsed = parse_options(&[
+            "poc".to_owned(),
+            "--frames".to_owned(),
+            "120".to_owned(),
+            "--duration-seconds".to_owned(),
+            "10".to_owned(),
+        ])
+        .expect("valid limits");
+        assert_eq!(parsed.frame_limit, Some(120));
+        assert_eq!(parsed.duration, Duration::from_secs(10));
+    }
+
+    #[test]
+    fn rejects_zero_duration_or_frame_limit() {
+        for args in [
+            vec!["poc".to_owned(), "--frames".to_owned(), "0".to_owned()],
+            vec![
+                "poc".to_owned(),
+                "--duration-seconds".to_owned(),
+                "0".to_owned(),
+            ],
+        ] {
+            assert!(parse_options(&args).is_err());
+        }
+    }
+
+    #[test]
     fn bgrx_becomes_bgra_and_sets_opaque_alpha() {
         let mut destination = [0_u8; 4];
         copy_bgrx_to_bgra(&[1, 2, 3, 99], &mut destination, 1, 1, 4)
@@ -314,5 +461,29 @@ mod tests {
         copy_bgrx_to_bgra(&source, &mut destination, 2, 1, 12)
             .expect("valid padded frame");
         assert_eq!(destination, [1, 2, 3, 255, 5, 6, 7, 255, 0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn stats_count_frame_sequence_gaps_and_timestamp_regressions() {
+        let mut stats = CaptureStats::default();
+        let frame = |sequence, timestamp| FrameletVideoFrame {
+            metadata: VideoFrameMetadata {
+                width: 1,
+                height: 1,
+                stride: 4,
+                pixel_format: FrameletPixelFormat::Bgra8,
+                timestamp: Duration::from_nanos(timestamp),
+                sequence,
+            },
+            data: vec![0; 4],
+        };
+        stats.record(&frame(1, 10));
+        stats.record(&frame(3, 20));
+        stats.record(&frame(4, 15));
+        assert_eq!(stats.received, 3);
+        assert_eq!(stats.sequence_gaps, 1);
+        assert_eq!(stats.timestamp_regressions, 1);
+        assert_eq!(stats.max_frame_bytes, 4);
+        assert_eq!(stats.total_frame_bytes, 12);
     }
 }
