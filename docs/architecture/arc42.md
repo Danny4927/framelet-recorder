@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.3 — capture contracts, Wayland PoC and microphone PoC  
+**Version:** 0.4 — bounded worker-level audio transport  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, and an isolated CPAL microphone PoC. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -30,6 +30,9 @@ Stakeholders: end users (predictable private recordings), maintainers (auditable
 - Exactly four MVP modes; optional microphone where specified; no system audio.
 - Local files only; offline recording; OS-mediated permissions; never bypass compositor/portal controls.
 - Rust Edition 2024. Every first-party crate must use #![forbid(unsafe_code)]. No raw pointers, custom FFI, unsafe trait implementations, or lint exceptions.
+- **Binding architecture:** hexagonal architecture (ports and adapters) applies to the whole application. Core owns use cases, domain/application types, and ports. Concrete adapters depend inward on those contracts. The desktop executable is the only composition root. No production feature may bypass this boundary.
+- **Binding domain model:** apply DDD inside the core. Maintain a ubiquitous language; encode business invariants in domain entities/value objects/aggregates where justified; keep the domain independent of infrastructure; document bounded contexts and relationships when multiple models emerge. DDD is not permission to add ceremonial patterns or speculative abstractions.
+- **Binding documentation:** this file is the arc42 architecture document and must retain all 12 numbered sections (1–12). Structural changes update the relevant sections in the same PR; significant decisions receive an ADR. The implementation roadmap is maintained separately and linked from this document.
 - Third-party dependencies may contain unsafe internals, but require review of unsafe/FFI boundaries, advisories, license, maintenance, transitive dependencies, native libraries, and platform parity.
 - UI thread is non-blocking; audio callbacks are real-time safe; queues are bounded.
 - Monotonic timestamps drive media synchronization; validate external dimensions and use checked arithmetic.
@@ -63,8 +66,10 @@ No telemetry, update checks, upload, remote control, or cloud processing is in s
 
 ## 4. Solution Strategy
 
+Domain-Driven Design complements the hexagonal architecture: the domain model and its invariants belong to the core; application use cases coordinate domain behavior and ports; adapters translate external concerns. The initial domain is the single Recording bounded context. Maintain a ubiquitous language and introduce additional contexts only when distinct models and ownership boundaries justify them.
+
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
-2. Ports and adapters: core depends on application-owned interfaces, not platform crates.
+2. Hexagonal architecture: all inbound and outbound interactions cross application-owned ports; concrete adapters depend inward on core-owned contracts. This is mandatory for every production feature, not only OS capture.
 3. Core-owned lifecycle: one authority coordinates prepare, record, pause, resume, stop, cancel, and finalize.
 4. Message-driven boundaries: UI sends commands and receives state/progress events; workers publish owned media blocks through bounded transport.
 5. One monotonic media timeline with a common recording origin.
@@ -99,7 +104,7 @@ flowchart TB
 |---|---|---|
 | apps/desktop | Entry point, Slint window, wiring, UI event translation | Capture, encode, blocking I/O, own lifecycle rules |
 | crates/core | Use cases, validated commands, state machine, orchestration | Depend on Slint or concrete platform/media crates |
-| crates/capture-api | Safe source/frame/audio contracts and typed errors | Expose raw pointers, native handles, unbounded queues |
+| crates/capture-api | Safe source/frame/audio contracts, validation and bounded worker-level audio transport | Expose raw pointers, native handles, unbounded queues or callback-unsafe abstractions |
 | capture-screen (future) | Screen selection and acquisition per OS | Bypass OS permissions |
 | capture-camera (future) | Camera enumeration, negotiation, acquisition | Hide disconnects or silently switch devices |
 | capture-audio (evaluation PoC only) | Microphone enumeration, F32 input and bounded sample delivery | Block/allocate/I/O in the audio callback; imply production support |
@@ -109,16 +114,62 @@ flowchart TB
 
 Create crates only when real code justifies a boundary. No empty placeholder members.
 
-### 5.3 Dependency direction
+### 5.3 Hexagonal architecture and dependency rule (binding)
 
-The desktop executable is the composition root. Core depends on contracts, not Slint, GStreamer, CPAL, nokhwa, PipeWire, or Windows API crates. Adapters implement ports and are wired by desktop. Core unit tests use fakes and do not need capture devices.
+The desktop executable is the **only composition root**. The core owns application use cases, state transitions, domain/application data types, and the ports that describe required capabilities.
 
-### 5.4 Current state versus target
+- **Inbound ports:** typed use-case APIs such as PrepareRecording, StartRecording, PauseRecording, ResumeRecording, StopRecording, CancelRecording, and query/state subscriptions.
+- **Inbound adapters:** Slint UI event handlers and future command/automation entry points. They translate external input into inbound-port calls and render returned state/events; they contain no business rules.
+- **Outbound ports:** application-owned interfaces for screen/camera/microphone capture, media pipeline, output storage, settings, clock, and platform capabilities.
+- **Outbound adapters:** concrete OS/capture, CPAL or future audio backend, camera, media runtime, filesystem, and settings implementations.
+- **Composition root:** constructs adapters and injects them into core use cases. It is the only place allowed to know concrete adapter types.
+
+Dependency direction is strictly inward: adapters may depend on core-owned contracts; core must not import adapter crates, Slint, OS APIs, or media-library types. Translate native/library types and errors at adapter boundaries. Never pass framework types through a port.
+
+No UI-to-adapter shortcut, adapter-to-adapter dependency, global service locator, or concrete backend selection inside core is allowed. Core tests use fakes. Add compile-time dependency checks or architecture tests as the workspace grows.
+
+```text
+Inbound actor -> Inbound adapter -> Inbound port -> Application core
+                                                |
+                                     Outbound port (owned by core)
+                                                |
+                                  Outbound adapter -> OS/library/device
+```
+
+See ADR-0010. This rule is a release/PR acceptance criterion, not an aspirational target.
+
+### 5.4 Domain model and DDD boundaries (binding)
+
+DDD is the required modeling approach for Framelet's application domain. It works together with the hexagonal boundary: the domain model is inside the core; inbound and outbound adapters translate external concerns without owning business rules.
+
+**Initial ubiquitous language** (to be refined as behavior is implemented):
+
+| Term | Meaning / invariant |
+|---|---|
+| Recording | A user-initiated local capture session that produces one finalized recording artifact |
+| Recording session | The lifecycle instance for prepare, start, pause, resume, stop, cancel, and finalize; state transitions are owned by the core |
+| Capture source | A user-selected screen/window, camera, or microphone with explicit identity and capabilities |
+| Media stream | Timestamped audio or video blocks belonging to a recording session and source |
+| Recording mode | One of the explicitly supported combinations: screen, microphone-only, webcam, or screen + webcam; optional microphone where specified |
+| Output artifact | A locally stored recording that is not considered successful until finalization and publication complete |
+
+**Modeling rules:**
+- Put domain concepts and invariants in `crates/core` (or a clearly separated domain module within the core); keep `capture-api` focused on transport/interoperability contracts rather than becoming a second domain model.
+- Use entities for identity-bearing lifecycle concepts, value objects for validated immutable concepts (for example source identity, recording configuration, media time, and output destination), and aggregates only where a consistency boundary and invariants require them.
+- The recording session is the initial aggregate candidate: its root owns legal lifecycle transitions and invariants such as idempotent stop/cancel semantics and finalization outcome. Confirm or revise this boundary during Phase 1 based on concrete use cases; do not force all devices/media buffers into this aggregate.
+- Application use cases coordinate domain objects and ports. Adapters own device/codec/filesystem mechanics and map native/persisted types to application-owned contracts.
+- Domain events represent meaningful facts (for example recording started, source lost, audio gap detected, recording finalized); transport notifications are not automatically domain events.
+- Do not introduce repositories, domain services, specifications, factories, or event buses unless a concrete invariant or use case needs them. Persistence abstractions belong at the application port boundary.
+- Keep one ubiquitous language across code, tests, UI translations, ADRs, and arc42. Record changes to key terms and bounded-context boundaries here.
+
+The initial MVP is one bounded context: **Recording**. Split additional bounded contexts only when independent models, invariants, or ownership justify it; do not pre-emptively create microservices or separate deployables.
+
+### 5.5 Current state versus target
 
 | Area | Status |
 |---|---|
 | Slint shell | Present; scaffold only |
-| capture-api | Safe source descriptors, validated packed BGRA/RGBA video frames, and interleaved audio blocks implemented; streaming transport remains open |
+| capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Mode enum and transition predicate; orchestration incomplete |
@@ -234,6 +285,9 @@ See [ADR index](adr/README.md).
 | ADR-0006 | Start Wayland portal PoC with lamco-wayland | Accepted for evaluation only |
 | ADR-0007 | Lower-level PipeWire thread manager for the isolated frame PoC | Accepted for PoC |
 | ADR-0008 | Evaluate CPAL for microphone capture | Evaluation only |
+| ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
+| ADR-0010 | Make hexagonal architecture and arc42 compliance binding | Accepted |
+| ADR-0011 | Make Domain-Driven Design binding for the application domain | Accepted |
 
 ## 10. Quality Requirements
 
@@ -265,13 +319,19 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | Plugin discovery risk | Supply-chain/runtime loading risk | Explicit plugin allowlist and packaged paths |
 | Capture API too small for streaming | Expensive API rework | Design ownership and event contract during PoC |
 
-Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
+Implementation sequencing and phase exit criteria are defined in [Implementation roadmap](implementation-roadmap.md). Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
 
 ## 12. Glossary
 
 | Term | Meaning |
 |---|---|
 | Adapter | Platform/library-specific implementation of an application-owned port |
+| Aggregate | Cluster of domain objects whose invariants are enforced through one root |
+| Bounded context | Explicit boundary within which a domain model and its language are consistent |
+| Domain event | A fact of domain significance that has occurred |
+| Entity | Domain object defined by identity and lifecycle |
+| Ubiquitous language | Shared, precise vocabulary used by domain experts and the delivery team |
+| Value object | Immutable domain concept defined by its values |
 | Backpressure | Preventing a fast producer from overwhelming a slower consumer |
 | Capture source | User-selected display, window, camera, or microphone |
 | Core | Application layer owning use cases and recording lifecycle |

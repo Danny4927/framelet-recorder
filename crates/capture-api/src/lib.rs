@@ -4,6 +4,7 @@
 //! Frames and audio blocks own their data. Adapters must validate native
 //! dimensions, strides, and lengths before constructing these values.
 
+use std::collections::VecDeque;
 use std::time::Duration;
 
 /// Stable identifier assigned by a capture adapter.
@@ -141,7 +142,7 @@ pub struct AudioBlock {
 }
 
 impl AudioBlock {
-    /// Creates an audio block after validating its sample configuration.
+    /// Creates an audio block after validating its sample configuration and finite samples.
     pub fn new(
         sample_rate: u32,
         channels: u16,
@@ -152,6 +153,10 @@ impl AudioBlock {
         if sample_rate == 0 || channels == 0 || !samples.len().is_multiple_of(usize::from(channels))
         {
             return Err(CaptureError::InvalidAudioLayout);
+        }
+
+        if samples.iter().any(|sample| !sample.is_finite()) {
+            return Err(CaptureError::InvalidAudioSample);
         }
 
         Ok(Self {
@@ -191,8 +196,107 @@ pub enum CaptureError {
     VideoBufferTooShort,
     /// Audio sample rate, channel count, or interleaved sample count was invalid.
     InvalidAudioLayout,
+    /// An audio sample was NaN or infinite.
+    InvalidAudioSample,
+    /// Audio block format differs from the queue's negotiated format.
+    AudioFormatMismatch,
+    /// Audio block exceeds the configured maximum sample count.
+    AudioBlockTooLarge,
+    /// Bounded audio queue is full; no queued audio was discarded.
+    AudioTransportFull,
     /// Backend-specific failure.
     BackendFailure(String),
+}
+
+/// A fixed-capacity FIFO for owned audio blocks transferred between workers.
+///
+/// This queue may allocate and is not real-time safe. Never call it from an
+/// audio device callback; callbacks should write to a preallocated SPSC ring
+/// that a consumer worker drains into owned AudioBlocks.
+#[derive(Debug)]
+pub struct AudioBlockQueue {
+    blocks: VecDeque<AudioBlock>,
+    capacity_blocks: usize,
+    max_block_samples: usize,
+    sample_rate: u32,
+    channels: u16,
+    rejected_blocks: u64,
+}
+
+impl AudioBlockQueue {
+    /// Creates a bounded queue for one negotiated audio format.
+    pub fn new(
+        capacity_blocks: usize,
+        max_block_samples: usize,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Result<Self, CaptureError> {
+        if capacity_blocks == 0 || max_block_samples == 0 || sample_rate == 0 || channels == 0 {
+            return Err(CaptureError::InvalidAudioLayout);
+        }
+        Ok(Self {
+            blocks: VecDeque::with_capacity(capacity_blocks),
+            capacity_blocks,
+            max_block_samples,
+            sample_rate,
+            channels,
+            rejected_blocks: 0,
+        })
+    }
+
+    /// Enqueues a block, rejecting mismatches, oversized blocks, or a full queue.
+    ///
+    /// A full queue rejects the newest block and retains all previously accepted
+    /// blocks. Callers must surface this result as an explicit audio overrun.
+    pub fn try_push(&mut self, block: AudioBlock) -> Result<(), CaptureError> {
+        if block.sample_rate != self.sample_rate || block.channels != self.channels {
+            return Err(CaptureError::AudioFormatMismatch);
+        }
+        if block.samples.len() > self.max_block_samples {
+            return Err(CaptureError::AudioBlockTooLarge);
+        }
+        if self.blocks.len() >= self.capacity_blocks {
+            self.rejected_blocks = self.rejected_blocks.saturating_add(1);
+            return Err(CaptureError::AudioTransportFull);
+        }
+        self.blocks.push_back(block);
+        Ok(())
+    }
+
+    /// Removes the oldest queued block.
+    pub fn pop(&mut self) -> Option<AudioBlock> {
+        self.blocks.pop_front()
+    }
+
+    /// Returns the number of queued blocks.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.blocks.len()
+    }
+
+    /// Returns whether no blocks are queued.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    /// Returns the configured block capacity.
+    #[must_use]
+    pub const fn capacity_blocks(&self) -> usize {
+        self.capacity_blocks
+    }
+
+    /// Returns the maximum interleaved samples in one block.
+    #[must_use]
+    pub const fn max_block_samples(&self) -> usize {
+        self.max_block_samples
+    }
+
+    /// Returns blocks rejected because the queue was full.
+    #[must_use]
+    pub const fn rejected_blocks(&self) -> u64 {
+        self.rejected_blocks
+    }
 }
 
 /// Safe lifecycle contract for a video source.
@@ -280,6 +384,78 @@ mod tests {
     fn audio_block_counts_interleaved_sample_frames() {
         let block = AudioBlock::new(48_000, 2, Duration::ZERO, Some(0), vec![0.0; 960]);
         assert_eq!(block.map(|value| value.frame_count()), Ok(480));
+    }
+
+    #[test]
+    fn audio_block_rejects_non_finite_samples() {
+        assert_eq!(
+            AudioBlock::new(48_000, 2, Duration::ZERO, None, vec![f32::NAN, 0.0]),
+            Err(CaptureError::InvalidAudioSample)
+        );
+        assert_eq!(
+            AudioBlock::new(48_000, 2, Duration::ZERO, None, vec![f32::INFINITY, 0.0]),
+            Err(CaptureError::InvalidAudioSample)
+        );
+    }
+
+    #[test]
+    fn audio_queue_preserves_fifo_and_rejects_newest_when_full() {
+        let mut queue = AudioBlockQueue::new(2, 8, 48_000, 2).expect("valid queue");
+        let first = AudioBlock::new(48_000, 2, Duration::ZERO, Some(0), vec![1.0, 1.0])
+            .expect("first block");
+        let second = AudioBlock::new(48_000, 2, Duration::from_millis(1), Some(1), vec![2.0, 2.0])
+            .expect("second block");
+        queue.try_push(first).expect("first push");
+        queue.try_push(second).expect("second push");
+
+        let third = AudioBlock::new(48_000, 2, Duration::from_millis(2), Some(2), vec![3.0, 3.0])
+            .expect("third block");
+        assert_eq!(queue.try_push(third), Err(CaptureError::AudioTransportFull));
+        assert_eq!(queue.len(), 2);
+        assert_eq!(queue.rejected_blocks(), 1);
+        assert_eq!(queue.pop().map(|block| block.samples), Some(vec![1.0, 1.0]));
+        assert_eq!(queue.pop().map(|block| block.samples), Some(vec![2.0, 2.0]));
+        assert!(queue.is_empty());
+    }
+
+    #[test]
+    fn audio_queue_rejects_format_mismatch_and_oversized_blocks() {
+        let mut queue = AudioBlockQueue::new(1, 2, 48_000, 2).expect("valid queue");
+        let wrong_rate =
+            AudioBlock::new(44_100, 2, Duration::ZERO, None, vec![0.0, 0.0]).expect("valid block");
+        assert_eq!(
+            queue.try_push(wrong_rate),
+            Err(CaptureError::AudioFormatMismatch)
+        );
+
+        let oversized =
+            AudioBlock::new(48_000, 2, Duration::ZERO, None, vec![0.0; 4]).expect("valid block");
+        assert_eq!(
+            queue.try_push(oversized),
+            Err(CaptureError::AudioBlockTooLarge)
+        );
+        assert_eq!(queue.len(), 0);
+        assert_eq!(queue.rejected_blocks(), 0);
+    }
+
+    #[test]
+    fn audio_queue_rejects_invalid_configuration() {
+        assert_eq!(
+            AudioBlockQueue::new(0, 8, 48_000, 2).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
+        assert_eq!(
+            AudioBlockQueue::new(1, 0, 48_000, 2).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
+        assert_eq!(
+            AudioBlockQueue::new(1, 8, 0, 2).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
+        assert_eq!(
+            AudioBlockQueue::new(1, 8, 48_000, 0).err(),
+            Some(CaptureError::InvalidAudioLayout)
+        );
     }
 
     #[test]

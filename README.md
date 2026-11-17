@@ -41,7 +41,7 @@ System audio capture is out of scope.
 
 ## Status
 
-The repository contains the product and engineering specification, safe media data contracts, and isolated capture proof-of-concepts. The Wayland/PipeWire and CPAL microphone candidates are not yet production backends; real-device, security and packaging gates remain open.
+The repository contains the product and engineering specification, safe media data contracts, a bounded worker-level audio block queue, and isolated capture proof-of-concepts. The queue is not callback-safe; CPAL remains outside the production workspace. Capture backends still require real-device, security and packaging validation.
 
 ## Documentation
 
