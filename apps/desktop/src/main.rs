@@ -5,6 +5,7 @@ slint::include_modules!();
 
 use std::path::PathBuf;
 
+use framelet_core::ports::PortError;
 use framelet_storage::FileSystemRecordingStorage;
 
 const DEFAULT_OUTPUT_DIRECTORY: &str = "Framelet";
@@ -20,6 +21,27 @@ fn default_output_directory() -> PathBuf {
 
 fn display_path(path: &std::path::Path) -> String {
     path.to_string_lossy().into_owned()
+}
+
+fn scan_recovery(directory: PathBuf) -> Result<Vec<PathBuf>, PortError> {
+    FileSystemRecordingStorage::new(directory)?.find_orphaned_temporary_files()
+}
+
+fn apply_recovery_result(window: &MainWindow, result: Result<Vec<PathBuf>, PortError>) {
+    match result {
+        Ok(files) => {
+            window.set_recovery_message(format!("{} temporäre Datei(en) gefunden", files.len()).into());
+            window.set_status_message(if files.is_empty() {
+                "Keine verwaisten temporären Dateien gefunden.".into()
+            } else {
+                "Dateien bleiben unverändert; keine automatische Löschung.".into()
+            });
+        }
+        Err(error) => {
+            window.set_recovery_message("Prüfung fehlgeschlagen".into());
+            window.set_status_message(format!("Recovery-Prüfung fehlgeschlagen: {error}").into());
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -51,45 +73,36 @@ fn main() -> Result<(), slint::PlatformError> {
     apply_native_title_bar(&window);
 
     let output_directory = default_output_directory();
-    match FileSystemRecordingStorage::new(output_directory.clone()) {
-        Ok(storage) => {
-            window.set_output_directory(display_path(&output_directory).into());
-            let count = storage.find_orphaned_temporary_files().map(|files| files.len()).unwrap_or(0);
-            window.set_recovery_message(format!("{count} temporäre Datei(en) gefunden").into());
-            if count > 0 {
-                window.set_status_message("Unterbrochene Dateien werden nicht automatisch gelöscht.".into());
-            } else {
-                window.set_status_message("Speicherort bereit; Aufnahme-Backend noch nicht verfügbar.".into());
-            }
-        }
-        Err(error) => {
-            window.set_status_message(format!("Speicherort nicht verfügbar: {error}").into());
-            window.set_recovery_message("Prüfung nicht möglich".into());
-        }
+    window.set_output_directory(display_path(&output_directory).into());
+    window.set_status_message("Speicherort wird geprüft; Aufnahme-Backend noch nicht verfügbar.".into());
+
+    {
+        let weak = window.as_weak();
+        let directory = output_directory.clone();
+        std::thread::spawn(move || {
+            let result = scan_recovery(directory);
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(window) = weak.upgrade() {
+                    apply_recovery_result(&window, result);
+                }
+            });
+        });
     }
 
     {
-        let directory = output_directory.clone();
         let weak = window.as_weak();
+        let directory = output_directory.clone();
         window.on_scan_recovery(move || {
-            if let Some(window) = weak.upgrade() {
-                match FileSystemRecordingStorage::new(directory.clone())
-                    .and_then(|storage| storage.find_orphaned_temporary_files())
-                {
-                    Ok(files) => {
-                        window.set_recovery_message(format!("{} temporäre Datei(en) gefunden", files.len()).into());
-                        window.set_status_message(if files.is_empty() {
-                            "Keine verwaisten temporären Dateien gefunden.".into()
-                        } else {
-                            "Dateien bleiben unverändert; keine automatische Löschung.".into()
-                        });
+            let weak = weak.clone();
+            let directory = directory.clone();
+            std::thread::spawn(move || {
+                let result = scan_recovery(directory);
+                let _ = slint::invoke_from_event_loop(move || {
+                    if let Some(window) = weak.upgrade() {
+                        apply_recovery_result(&window, result);
                     }
-                    Err(error) => {
-                        window.set_recovery_message("Prüfung fehlgeschlagen".into());
-                        window.set_status_message(format!("Recovery-Prüfung fehlgeschlagen: {error}").into());
-                    }
-                }
-            }
+                });
+            });
         });
     }
 
