@@ -4,8 +4,6 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use framelet_capture_api::AudioBlock;
 
 const MAX_DATA_BYTES: u64 = u32::MAX as u64 - 36;
@@ -156,7 +154,7 @@ impl WavWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn path(label: &str) -> PathBuf {
         let id = SystemTime::now()
