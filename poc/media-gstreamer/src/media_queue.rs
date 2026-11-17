@@ -190,6 +190,17 @@ mod tests {
     }
 
     #[test]
+    fn reports_consumer_disconnection_separately_from_queue_full() {
+        let (producer, consumer) = bounded(1).expect("positive capacity");
+        drop(consumer);
+        assert_eq!(
+            producer.try_push(7),
+            Err(QueueSendError::Disconnected(7))
+        );
+        assert_eq!(producer.metrics().queued, 0);
+    }
+
+    #[test]
     fn supports_multiple_producers_and_a_consumer_without_exceeding_capacity() {
         let (producer, consumer) = bounded(8).expect("positive capacity");
         let first = producer.clone();
