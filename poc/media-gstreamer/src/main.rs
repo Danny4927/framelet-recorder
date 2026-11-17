@@ -11,8 +11,8 @@ use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use framelet_capture_api::{AudioBlock, PixelFormat, VideoFrame, VideoFrameMetadata};
-use gstreamer as gst;
 use gst::prelude::*;
+use gstreamer as gst;
 use gstreamer_app as gst_app;
 use gstreamer_video as gst_video;
 
