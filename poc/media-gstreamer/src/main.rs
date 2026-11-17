@@ -9,7 +9,10 @@
 //! involved. This PoC is only a pipeline wiring smoke test until real encoding,
 //! muxing, playback, clock synchronization and failure gates are measured.
 
-#[cfg(test)]\nmod validation;\n\nuse std::{path::PathBuf, time::Duration};
+#[cfg(test)]
+mod validation;
+
+use std::{path::PathBuf, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use framelet_capture_api::{AudioBlock, PixelFormat, VideoFrame, VideoFrameMetadata};
