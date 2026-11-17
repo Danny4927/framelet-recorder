@@ -11,6 +11,7 @@
 
 #[cfg(test)]
 mod validation;
+#[cfg(test)]
 mod media_queue;
 
 use std::{path::PathBuf, time::Duration};
