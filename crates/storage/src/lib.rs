@@ -132,9 +132,9 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         let session = MediaSessionId::new(format!("filesystem-{sequence}"))?;
         let (reserved_sequence, temporary_path, final_path) =
             self.reserve_candidate(recording_id, sequence)?;
-        self.next_session = reserved_sequence.checked_add(1).ok_or_else(|| {
-            PortError::Failed("storage session identity exhausted".into())
-        })?;
+        self.next_session = reserved_sequence
+            .checked_add(1)
+            .ok_or_else(|| PortError::Failed("storage session identity exhausted".into()))?;
 
         self.active.insert(
             session.clone(),
@@ -303,7 +303,10 @@ mod tests {
 
         assert!(storage.publish(&session).is_err());
         assert_eq!(fs::read(&existing).expect("read existing"), b"keep me");
-        assert_eq!(fs::read(&candidate).expect("candidate retained"), b"new media");
+        assert_eq!(
+            fs::read(&candidate).expect("candidate retained"),
+            b"new media"
+        );
         storage.abort(&session).expect("abort");
         fs::remove_dir_all(directory).expect("cleanup");
     }
