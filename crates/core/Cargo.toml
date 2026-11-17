@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-framelet-capture-api = { path = "../capture-api" }
+framelet-capture-api = { path = "../capture-api", version = "0.1.0" }
 
 [lints]
 workspace = true
