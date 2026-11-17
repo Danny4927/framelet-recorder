@@ -206,28 +206,49 @@ pub trait RecordingSessionRepository: Send + Sync {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RecordingEvent {
     /// Preparation completed and the session can start.
-    Ready { recording_id: RecordingId },
+    Ready {
+        /// Identity of the session that finished preparation.
+        recording_id: RecordingId,
+    },
     /// Capture started.
-    Started { recording_id: RecordingId },
+    Started {
+        /// Identity of the session that started capture.
+        recording_id: RecordingId,
+    },
     /// Capture paused.
-    Paused { recording_id: RecordingId },
+    Paused {
+        /// Identity of the session that was paused.
+        recording_id: RecordingId,
+    },
     /// Capture resumed.
-    Resumed { recording_id: RecordingId },
+    Resumed {
+        /// Identity of the session that resumed capture.
+        recording_id: RecordingId,
+    },
     /// Finalization completed and the artifact is available.
     Completed {
+        /// Identity of the completed session.
         recording_id: RecordingId,
+        /// Published output descriptor.
         artifact: RecordingArtifact,
     },
     /// Session failed.
     Failed {
+        /// Identity of the failed session.
         recording_id: RecordingId,
+        /// Human-readable, adapter-neutral failure summary.
         reason: String,
     },
     /// Preparation was cancelled.
-    Cancelled { recording_id: RecordingId },
+    Cancelled {
+        /// Identity of the session that was cancelled.
+        recording_id: RecordingId,
+    },
     /// A source was lost during capture.
     SourceLost {
+        /// Identity of the session affected by source loss.
         recording_id: RecordingId,
+        /// Source identity that became unavailable.
         source: SourceId,
     },
 }

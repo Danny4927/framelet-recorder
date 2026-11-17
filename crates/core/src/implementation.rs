@@ -200,9 +200,19 @@ pub enum DomainError {
     /// An output location must not be empty.
     EmptyArtifactLocation,
     /// A lifecycle transition is not permitted.
-    InvalidTransition { from: RecordingState, to: RecordingState },
+    InvalidTransition {
+        /// State the aggregate was in before the attempted transition.
+        from: RecordingState,
+        /// State requested by the rejected operation.
+        to: RecordingState,
+    },
     /// An operation requires a specific lifecycle state.
-    UnexpectedState { expected: RecordingState, actual: RecordingState },
+    UnexpectedState {
+        /// State required by the attempted operation.
+        expected: RecordingState,
+        /// Actual state of the aggregate.
+        actual: RecordingState,
+    },
 }
 impl fmt::Display for DomainError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
