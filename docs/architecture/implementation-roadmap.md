@@ -25,7 +25,7 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
 | 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
-| 2 | Media pipeline evaluation and backend decision | In progress — synthetic happy-path EOS integration exists; failure, overload, playback, performance, dependency and backend-selection gates remain open | 0, 1 (port requirements) |
+| 2 | Media pipeline evaluation and backend decision | In progress — bounded producer/consumer queue and native EOS/sink/timeout validation implemented; backend decision recorded as continued deferral; independent playback, hardware, packaging and license evidence remain open | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | In progress — filesystem adapter slice merged in PR #16; failure-injection and durability gates remain open | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
 | 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
@@ -78,30 +78,33 @@ Exit criteria:
 
 ## Phase 2 — Media pipeline evaluation and decision
 
-**Merged baseline:** PR #14 added an isolated GStreamer `appsrc` dual-stream VP8/Vorbis-to-Matroska spike and proposed ADR-0013. It remains an evaluation candidate only; ADR-0004 still defers production backend selection.
+**Merged baseline:** PR #14 introduced the isolated GStreamer dual-stream PoC; PR #15 added repeatable model tests and the real Linux EOS integration baseline.
 
-**Next validation slice:** PR #15 adds reproducible tests and measurements to the isolated PoC. It does not complete Phase 2 or approve a production runtime.
+**This implementation slice:** adds a fixed-capacity producer-to-pipeline-worker queue, non-blocking producer sends, counted video drop-newest, fatal audio overload, queue metrics, concurrent queue tests, sink-error and EOS-timeout integration tests. It records the candidate comparison and continued backend deferral in [ADR-0015](adr/ADR-0015-media-backend-evaluation-decision.md). GStreamer remains outside the production workspace.
 
 Deliverables:
-- Compare viable media runtimes and/or libraries against Windows/Linux support, Rust integration, codecs/containers, plugin footprint, safe API availability, latency, memory, licensing, packaging, and offline operation.
-- Build a narrow isolated PoC that accepts timestamped owned audio/video blocks, encodes/muxes a local file, and finalizes deterministically. The first synthetic VP8/Vorbis-to-Matroska spike is not the final product format.
-- Add hardware-free reference-model tests for timestamp ordering, per-stream sequence continuity, audio sample-position continuity, queue-model capacity and terminal-state combinations. These are model tests only: they do not exercise GStreamer, concurrent producers/consumers, appsrc backpressure, bus messages, or native failure handling.
-- A Linux CI happy-path integration test now initializes GStreamer, pushes synthetic audio/video through the real pipeline, waits for pipeline-wide bus EOS, and verifies a non-empty output. Extend native integration coverage to branch-specific encoder/sink errors, timeout, interruption, and incomplete-output cleanup. The two-stream finalization barrier remains a reference model, not runtime coordination.
-- Add and measure an actual bounded producer/consumer queue with overload accounting before drawing resource/performance conclusions. Media queueing must not block the control path.
-- Measure startup, CPU/RSS, queue occupancy, A/V sync, stop-to-finalize latency, and failure recovery. Record test configuration and avoid presenting hosted CI timings as representative performance data.
-- Compare GStreamer with FFmpeg-based Rust bindings and viable pure-Rust media stacks; record the selected approach (or continued deferral) in a superseding ADR. Do not let the candidate runtime leak through core ports.
+- Compare GStreamer, FFmpeg Rust bindings, and pure-Rust candidates against safe API boundaries, Windows/Linux availability, codec/container coverage, native footprint, licensing, packaging, and offline operation. The current evidence supports continued deferral, not production selection.
+- Keep the synthetic VP8/Vorbis-to-Matroska pipeline isolated. It is a diagnostic format, not approval of the final MP4/H.264/AAC profile.
+- Maintain hardware-free reference tests for per-stream timestamps, sequence continuity, audio sample positions, queue capacity, and terminal states.
+- Exercise the real GStreamer pipeline in Linux CI for pipeline-wide EOS, non-empty output, filesink failure, and bounded EOS timeout. Encoder-specific injection, process interruption, and crash recovery remain external gates.
+- Use a real fixed-capacity producer/consumer channel between synthetic producer and pipeline worker. Producer sends are non-blocking; video overload is counted and dropped, audio overload fails explicitly, and queue high-water/rejection metrics are surfaced.
+- Keep all media work off UI and real-time callback threads. The terminal marker is control data and is retried on the synthetic worker; production control-path independence still requires sustained-load validation.
+- Record CPU/RSS/startup/throughput/A/V drift/stop-to-finalize measurements only from documented hardware/software runs; queue counters are emitted by the PoC but do not substitute for those measurements.
+- Keep the native runtime/plugin inventory and exact redistribution review open until a concrete production profile is proposed.
 
 Exit criteria:
 - [ ] Representative sample recordings play in at least two independent players on each tested OS.
 - [ ] Output target formats are validated separately; diagnostic Matroska/VP8/Vorbis does not approve MP4/H.264/AAC.
-- [ ] Reference-model tests cover per-stream timestamp ordering, contiguous sequence numbers, audio sample-position continuity, queue-model bounds and terminal-state combinations; these do not count as pipeline integration evidence.
+- [x] Reference-model tests cover per-stream timestamp ordering, contiguous sequence numbers, audio sample-position continuity, queue-model bounds and terminal-state combinations; these do not count as pipeline integration evidence.
 - [x] Linux CI integration test verifies real synthetic audio/video pipeline EOS and non-empty output.
-- [ ] GStreamer integration tests verify branch-specific encoder/sink errors, timeout, interruption and incomplete-output cleanup.
-- [ ] Actual bounded producer queues, explicit backpressure, audio-gap handling and control-path independence are verified under load.
-- [ ] Dependency/native plugin inventory and redistribution licenses are reviewed.
-- [ ] No unsafe code is introduced into first-party crates.
-- [ ] Selection/defer decision is recorded in an ADR and arc42 sections 5, 7, 8, 11 updated.
+- [ ] GStreamer integration tests verify encoder-specific errors, interruption and incomplete-output cleanup; filesink error and bounded EOS timeout are covered.
+- [x] A fixed-capacity producer/consumer queue is used by the PoC; producer sends are non-blocking, video drops are counted, audio overload fails explicitly, and concurrent producer/full-queue behavior is tested.
+- [ ] Sustained overload, long-run audio-gap handling, and control-path independence are verified under representative load.
+- [ ] Exact dependency/native plugin inventory and redistribution licenses are reviewed for a proposed production profile.
+- [x] No unsafe code is introduced into first-party crates; the PoC crate forbids unsafe code.
+- [x] Candidate comparison and continued defer decision are recorded in ADR-0015 and arc42 sections 5, 7, 8, 9, and 11.
 - [ ] Measured CPU, process RSS, startup, throughput, queue high-water marks, A/V drift and stop-to-finalize latency are recorded with hardware/software context.
+
 
 ## Phase 3 — Transactional local storage
 
