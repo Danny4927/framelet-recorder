@@ -85,16 +85,18 @@ Exit criteria:
 Deliverables:
 - Compare viable media runtimes and/or libraries against Windows/Linux support, Rust integration, codecs/containers, plugin footprint, safe API availability, latency, memory, licensing, packaging, and offline operation.
 - Build a narrow isolated PoC that accepts timestamped owned audio/video blocks, encodes/muxes a local file, and finalizes deterministically. The first synthetic VP8/Vorbis-to-Matroska spike is not the final product format.
-- Exercise EOS and pipeline failure paths deterministically, and verify that incomplete candidate outputs are never presented as completed artifacts.
-- Add explicit bounded queue behavior and overload accounting before drawing resource/performance conclusions. Media queueing must not block the control path.
+- Add hardware-free reference-model tests for timestamp ordering, per-stream sequence continuity, audio sample-position continuity, queue-model capacity and terminal-state combinations. These are model tests only: they do not exercise GStreamer, concurrent producers/consumers, appsrc backpressure, bus messages, or native failure handling.
+- Validate real pipeline EOS/error/timeout behavior and incomplete-output cleanup with GStreamer integration tests on supported native runtimes. The current PoC only observes pipeline-wide bus EOS/error; its two-stream finalization barrier is a reference model, not runtime coordination.
+- Add and measure an actual bounded producer/consumer queue with overload accounting before drawing resource/performance conclusions. Media queueing must not block the control path.
 - Measure startup, CPU/RSS, queue occupancy, A/V sync, stop-to-finalize latency, and failure recovery. Record test configuration and avoid presenting hosted CI timings as representative performance data.
 - Compare GStreamer with FFmpeg-based Rust bindings and viable pure-Rust media stacks; record the selected approach (or continued deferral) in a superseding ADR. Do not let the candidate runtime leak through core ports.
 
 Exit criteria:
 - [ ] Representative sample recordings play in at least two independent players on each tested OS.
 - [ ] Output target formats are validated separately; diagnostic Matroska/VP8/Vorbis does not approve MP4/H.264/AAC.
-- [ ] Finalization and injected failure tests pass, including EOS, encoder/sink errors, timeout and interruption behavior.
-- [ ] Bounded producer queues, explicit backpressure, audio-gap handling and control-path independence are verified.
+- [ ] Reference-model tests cover per-stream timestamp ordering, contiguous sequence numbers, audio sample-position continuity, queue-model bounds and terminal-state combinations; these do not count as pipeline integration evidence.
+- [ ] GStreamer integration tests verify real pipeline EOS, encoder/sink errors, timeout, interruption and incomplete-output cleanup.
+- [ ] Actual bounded producer queues, explicit backpressure, audio-gap handling and control-path independence are verified under load.
 - [ ] Dependency/native plugin inventory and redistribution licenses are reviewed.
 - [ ] No unsafe code is introduced into first-party crates.
 - [ ] Selection/defer decision is recorded in an ADR and arc42 sections 5, 7, 8, 11 updated.
