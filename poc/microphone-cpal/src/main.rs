@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::error::Error;
+use std::fs::OpenOptions;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,8 +69,25 @@ fn parse_output(args: &[String]) -> Result<PathBuf, Box<dyn Error>> {
         if value.trim().is_empty() { return Err("--output path must not be empty".into()); }
         return Ok(PathBuf::from(value));
     }
-    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
-    Ok(PathBuf::from(format!("framelet-recording-{timestamp}.wav")))
+    let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+    for suffix in 0_u32..1000 {
+        let name = if suffix == 0 {
+            format!("framelet-recording-{timestamp}.wav")
+        } else {
+            format!("framelet-recording-{timestamp}-{suffix}.wav")
+        };
+        let candidate = PathBuf::from(name);
+        match OpenOptions::new().write(true).create_new(true).open(&candidate) {
+            Ok(file) => {
+                drop(file);
+                std::fs::remove_file(&candidate)?;
+                return Ok(candidate);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+    Err("unable to choose a unique default output path".into())
 }
 
 fn print_usage() {
@@ -96,11 +114,15 @@ fn record_device(device: &cpal::Device, duration: Duration, output: PathBuf) -> 
     let callback_failed = Arc::new(AtomicBool::new(false));
     let callback_error = Arc::clone(&callback_failed);
     let config: StreamConfig = supported.into();
-    let stream = build_f32_stream(device, config, Arc::clone(&ring), move |_error: cpal::Error| {
+    let stream = build_f32_stream(device, config, Arc::clone(&ring), move |_error: cpal::StreamError| {
         callback_error.store(true, Ordering::Release);
     })?;
     let mut writer = WavWriter::create(&output, sample_rate, channels)?;
-    stream.play()?;
+    if let Err(error) = stream.play() {
+        drop(writer);
+        let _ = std::fs::remove_file(&output);
+        return Err(error.into());
+    }
 
     let chunk_frames = (u64::from(sample_rate) * CONSUMER_CHUNK_MILLIS / 1_000).max(1);
     let chunk_capacity = usize::try_from(chunk_frames).ok()
