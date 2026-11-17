@@ -280,11 +280,10 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
         loop {
             match producer.try_push_control(MediaPacket::End) {
                 Ok(()) => break,
-                Err(media_queue::QueueSendError::Full(MediaPacket::End)) => thread::yield_now(),
-                Err(media_queue::QueueSendError::Disconnected(MediaPacket::End)) => {
+                Err(media_queue::QueueSendError::Full(_)) => thread::yield_now(),
+                Err(media_queue::QueueSendError::Disconnected(_)) => {
                     bail!("media pipeline worker disconnected before finalization");
                 }
-                Err(_) => unreachable!("only the terminal marker is sent here"),
             }
         }
         Ok(())
