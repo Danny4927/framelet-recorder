@@ -53,7 +53,7 @@ fn validate_timeline(samples: &[TimedSample]) -> Result<(), TimelineError> {
         if state.end.is_some_and(|previous| sample.pts < previous) {
             return Err(TimelineError("stream timestamps regress or overlap"));
         }
-        if state.sequence.is_some_and(|previous| sample.sequence != previous + 1) {
+        if state.sequence.is_some_and(|previous| previous.checked_add(1) != Some(sample.sequence)) {
             return Err(TimelineError("stream sequence is not contiguous"));
         }
         state.sequence = Some(sample.sequence);
