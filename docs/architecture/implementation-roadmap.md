@@ -23,8 +23,8 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 
 | Phase | Scope | Status | Depends on |
 |---|---|---|---|
-| 0 | Architecture baseline, capture contracts, bounded audio worker transport | Current PR | — |
-| 1 | Core use cases, inbound/outbound ports, recording session orchestration | In progress — this PR | 0 |
+| 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
+| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Complete in this PR (pending CI/review) | 0 |
 | 2 | Media pipeline evaluation and backend decision | Planned | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
@@ -56,25 +56,25 @@ Exit criteria:
 
 ## Phase 1 — Core use cases and ports
 
-**Current PR:** Phase 1 initial implementation (Recording aggregate, use-case port and resource port). The PR establishes the first executable domain/application slice; production adapters, durable session storage, and desktop composition remain follow-up work.
+**Current PR:** PR #13 completes the core contract and orchestration slice for Phase 1. Production adapters and durable media storage remain later phases; the session repository contract is defined here, while its durable adapter is intentionally deferred.
 
 Deliverables:
 - Define application-owned inbound port/use cases for prepare, start, pause, resume, stop, cancel, and state query. Metrics/event subscription remains a follow-up once event semantics are specified.
-- Define outbound ports for screen, camera, microphone, media pipeline, storage, clock, and settings as required by concrete use cases.
+- Define separate outbound ports for screen, camera, microphone, media pipeline, storage, monotonic clock, settings, session metadata repository, event publication, and metrics snapshots.
 - Introduce a Recording session aggregate with explicit identity, configuration, lifecycle state, cancellation, finalization outcome, and artifact publication only after successful finalization.
-- Make the core lifecycle authoritative; adapters report events and never decide application state.
-- Add a fake resource adapter and deterministic tests for legal/illegal transitions, cancellation, orchestration order, duplicate session identity, and finalization failures. Device-loss contract tests follow when source-specific ports are defined.
+- Make the core lifecycle authoritative; adapters report facts and never decide application state. Publish typed lifecycle/source-loss events and expose coalesced metrics snapshots.
+- Add fake resource adapters and deterministic tests for legal/illegal transitions, cancellation, orchestration order, duplicate session identity, and finalization failures. Keep device-loss outcomes typed at the source-port boundary.
 
 Exit criteria:
-- [ ] Core has no concrete UI, OS, capture, media, or filesystem dependency.
-- [ ] Recording aggregate owns lifecycle transitions and rejects illegal operations.
-- [ ] Configuration invariants prevent optional microphone duplication in microphone-only mode.
-- [ ] Finalized artifact is exposed only after successful resource finalization.
-- [ ] Application use cases are defined by an inbound port and depend on a core-owned resource port.
-- [ ] Use cases can be exercised without hardware or native media runtimes.
-- [ ] Every port has a documented ownership, threading, error, cancellation, and shutdown contract.
-- [ ] Architecture/dependency checks prevent inward dependency violations.
-- [ ] arc42 sections 4–6 and relevant ADRs updated.
+- [x] Core has no concrete UI, OS, capture, media, or filesystem dependency.
+- [x] Recording aggregate owns lifecycle transitions and rejects illegal operations.
+- [x] Configuration invariants prevent optional microphone duplication in microphone-only mode.
+- [x] Finalized artifact is exposed only after successful resource finalization.
+- [x] Application use cases are defined by an inbound port and depend on core-owned outbound contracts.
+- [x] Use cases can be exercised without hardware or native media runtimes.
+- [x] Every port has a documented ownership, threading, error, cancellation, and shutdown contract in its API documentation.
+- [x] Core dependency boundary is explicit: only the backend-neutral capture-contract crate is a direct dependency; adapters depend inward on core ports.
+- [x] arc42 sections 4–6 and relevant ADRs updated.
 
 ## Phase 2 — Media pipeline evaluation and decision
 

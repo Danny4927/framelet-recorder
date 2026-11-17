@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.5 — Phase 1 Recording core and ports  
+**Version:** 0.6 — Phase 1 core ports and orchestration  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, and a core-owned resource port. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, and core-owned source, media, storage, clock, settings, repository, event, and metrics ports. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -80,7 +80,7 @@ Domain-Driven Design complements the hexagonal architecture: the domain model an
 
 ## 5. Building Block View
 
-The Phase 1 core now defines `RecordingSession` as the initial aggregate, `RecordingConfiguration` and `RecordingArtifact` as validated value concepts, and `RecordingId` as session identity. The `RecordingUseCases` inbound port defines lifecycle operations; `RecordingResources` is the outbound port used for resource preparation, capture control, draining and finalization. The first application service uses a fakeable resource implementation and keeps concrete backend types outside the core. Durable persistence, asynchronous event subscriptions, source-specific port splitting, and desktop composition remain out of scope for this phase slice.
+The Phase 1 core defines `RecordingSession` as the initial aggregate, `RecordingConfiguration` and `RecordingArtifact` as validated value concepts, and `RecordingId` as session identity. `RecordingUseCases` is the inbound application port. `ports.rs` defines source-specific screen, camera, and microphone contracts plus media pipeline, storage, monotonic clock, settings, session metadata repository, event publisher, and metrics snapshot contracts. Native types are translated at adapter boundaries; media payloads cross the boundary as owned `AudioBlock` and `VideoFrame` values from `capture-api`. The `RecordingResources` facade is retained for the initial application-service implementation; future composition can inject the granular adapters without changing domain types. The repository contract stores session metadata only; transactional media-file publication is implemented in Phase 3. Event publication is typed and observer-facing; high-frequency updates must be coalesced and must never run on real-time callbacks.
 
 The detailed backend-neutral media boundary is specified in [Capture and media contracts](capture-and-media-contracts.md). It defines source identity/capabilities, owned video/audio blocks, validation, clock mapping, events/errors, bounded transport, and cancellation.
 
@@ -174,7 +174,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
-| core | Recording session aggregate, validated configuration/artifact concepts, inbound use-case port and outbound resource port; desktop composition and durable state remain open |
+| core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
 | Media pipeline/compositing/encoding | Not implemented |
 | Storage/recovery | Not implemented |
 | Platform packaging | Not implemented |
