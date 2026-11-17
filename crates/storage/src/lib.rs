@@ -64,11 +64,11 @@ impl FileSystemRecordingStorage {
         let mut orphaned = Vec::new();
         for entry in fs::read_dir(&self.output_directory).map_err(map_io_error)? {
             let entry = entry.map_err(map_io_error)?;
-            if entry.file_name().to_string_lossy().starts_with(".framelet-pending-")
-                && entry
-                    .file_type()
-                    .map_err(map_io_error)?
-                    .is_file()
+            if entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".framelet-pending-")
+                && entry.file_type().map_err(map_io_error)?.is_file()
             {
                 orphaned.push(entry.path());
             }
@@ -150,7 +150,9 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
     }
 
     fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError> {
-        let pending = self.active.get(session)
+        let pending = self
+            .active
+            .get(session)
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
         match fs::remove_file(&pending.temporary_path) {
             Ok(()) => {}
@@ -164,16 +166,12 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
 
 fn map_io_error(error: io::Error) -> PortError {
     match error.kind() {
-        io::ErrorKind::PermissionDenied => {
-            PortError::Failed("filesystem permission denied".into())
-        }
+        io::ErrorKind::PermissionDenied => PortError::Failed("filesystem permission denied".into()),
         io::ErrorKind::StorageFull => PortError::StorageExhausted,
         io::ErrorKind::AlreadyExists => {
             PortError::Failed("recording destination already exists".into())
         }
-        io::ErrorKind::NotFound => {
-            PortError::Failed("recording path no longer exists".into())
-        }
+        io::ErrorKind::NotFound => PortError::Failed("recording path no longer exists".into()),
         _ => PortError::Failed(format!("filesystem operation failed: {error}")),
     }
 }
