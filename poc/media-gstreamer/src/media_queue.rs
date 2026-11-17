@@ -24,6 +24,12 @@ pub struct QueueMetricsSnapshot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct InvalidCapacity;
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum QueueSendError<T> {
+    Full(T),
+    Disconnected(T),
+}
+
 struct Metrics {
     capacity: usize,
     queued: AtomicUsize,
@@ -74,12 +80,12 @@ pub fn bounded<T>(capacity: usize) -> Result<(MediaProducer<T>, MediaConsumer<T>
 
 impl<T> MediaProducer<T> {
     /// Never waits for capacity. A full queue rejects the newest item.
-    pub fn try_push(&self, item: T) -> Result<(), T> {
+    pub fn try_push(&self, item: T) -> Result<(), QueueSendError<T>> {
         let mut queued = self.metrics.queued.load(Ordering::Relaxed);
         loop {
             if queued >= self.metrics.capacity {
                 self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
-                return Err(item);
+                return Err(QueueSendError::Full(item));
             }
             match self.metrics.queued.compare_exchange_weak(
                 queued,
@@ -98,10 +104,15 @@ impl<T> MediaProducer<T> {
                 self.metrics.accepted.fetch_add(1, Ordering::Relaxed);
                 Ok(())
             }
-            Err(TrySendError::Full(item) | TrySendError::Disconnected(item)) => {
+            Err(TrySendError::Full(item)) => {
                 self.metrics.queued.fetch_sub(1, Ordering::AcqRel);
                 self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
-                Err(item)
+                Err(QueueSendError::Full(item))
+            }
+            Err(TrySendError::Disconnected(item)) => {
+                self.metrics.queued.fetch_sub(1, Ordering::AcqRel);
+                self.metrics.rejected.fetch_add(1, Ordering::Relaxed);
+                Err(QueueSendError::Disconnected(item))
             }
         }
     }
@@ -165,7 +176,7 @@ mod tests {
         let (producer, consumer) = bounded(2).expect("positive capacity");
         assert_eq!(producer.try_push(10), Ok(()));
         assert_eq!(producer.try_push(20), Ok(()));
-        assert_eq!(producer.try_push(30), Err(30));
+        assert_eq!(producer.try_push(30), Err(QueueSendError::Full(30)));
         assert_eq!(consumer.try_pop(), Some(10));
         assert_eq!(consumer.try_pop(), Some(20));
         assert_eq!(consumer.try_pop(), None);
