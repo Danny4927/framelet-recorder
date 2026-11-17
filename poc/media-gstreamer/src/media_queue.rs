@@ -219,10 +219,7 @@ mod tests {
     fn control_retry_does_not_count_as_dropped_media() {
         let (producer, _consumer) = bounded(1).expect("positive capacity");
         assert_eq!(producer.try_push(1), Ok(()));
-        assert_eq!(
-            producer.try_push_control(2),
-            Err(QueueSendError::Full(2))
-        );
+        assert_eq!(producer.try_push_control(2), Err(QueueSendError::Full(2)));
         assert_eq!(producer.metrics().rejected, 0);
     }
 
@@ -257,8 +254,8 @@ mod tests {
                 .count()
         });
 
-        let accepted_by_producers = a.join().expect("first producer")
-            + b.join().expect("second producer");
+        let accepted_by_producers =
+            a.join().expect("first producer") + b.join().expect("second producer");
         let (received, metrics) = consumer_worker.join().expect("consumer worker");
         assert_eq!(received, accepted_by_producers as u64);
         assert_eq!(metrics.accepted, accepted_by_producers as u64);
