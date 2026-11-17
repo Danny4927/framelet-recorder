@@ -174,6 +174,10 @@ Device-supported formats take precedence. The app must never claim a setting is 
 
 Features must become testable through the running desktop application as soon as a vertical slice is complete. Do not defer all UI wiring to the end of the project. A UI control must invoke a real implemented use case or be visibly unavailable with an explanation; decorative controls and simulated success states are not acceptable. For every capability, distinguish implementation, automated test coverage, UI integration, and real-device validation. Each increment must include a short manual test procedure and preserve already-working UI flows.
 
+### 4.7 Planning and work tracking
+
+Maintain project planning exclusively as Markdown in the Git repository. Do not create GitHub Issues for tasks, bugs, backlog items, or phase tracking. The roadmap and architecture/specification documents are the source of truth; update them through normal reviewed Git changes. Pull requests are used for reviewing and delivering implementation changes.
+
 ## 5. Architecture
 
 Use a modular Rust workspace and a Rust-first application core. No backend or services.
