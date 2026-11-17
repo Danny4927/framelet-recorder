@@ -122,8 +122,9 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
     drop(stream);
 
     let chunk_capacity = usize::try_from(sample_rate)
-        .unwrap_or(48_000)
-        .saturating_mul(usize::from(channels))
+        .map_err(|_| "sample rate does not fit this platform")?
+        .checked_mul(usize::from(channels))
+        .ok_or("drain buffer size overflow")?
         .max(1);
     let mut scratch = vec![0.0_f32; chunk_capacity.min(ring_capacity)];
     let mut sample_count = 0_u64;
@@ -132,7 +133,8 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
         if count == 0 {
             break;
         }
-        sample_count = sample_count.saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
+        let count = u64::try_from(count).map_err(|_| "sample count overflow")?;
+        sample_count = sample_count.saturating_add(count);
     }
 
     println!(
