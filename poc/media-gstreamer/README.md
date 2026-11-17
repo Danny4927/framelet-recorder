@@ -4,7 +4,7 @@
 
 This PoC is deliberately outside the root Cargo workspace. It accepts Framelet-owned, validated synthetic `VideoFrame` and `AudioBlock` values through GStreamer's Rust `appsrc` API, sets timestamps/durations on media buffers, encodes them with VP8/Vorbis, muxes a Matroska file, and waits for EOS or an error before reporting success.
 
-The current source is an initial pipeline skeleton. Treat CI compilation as API/build evidence only: it is not yet proof that the output is playable, synchronized, performant, packageable, or suitable for production. Phase 2 remains open until independent playback and the measurement/failure matrix below are completed.
+The current source is an initial pipeline skeleton. Treat CI compilation as API/build evidence only: it is not yet proof that the output is playable, synchronized, performant, packageable, or suitable for production. The hardware-free tests in `src/validation.rs` exercise reference models only (timeline invariants, a single-threaded queue model, and a two-stream terminal-state model). They do not initialize GStreamer, test concurrent queueing, observe bus messages, or inject native encoder/sink failures. The running pipeline currently waits for GStreamer's pipeline-wide EOS/error bus message; the terminal-state model is not wired into runtime coordination. Phase 2 remains open until real integration tests, independent playback, and the measurement/failure matrix below are completed.
 
 ## Requirements
 
@@ -34,7 +34,7 @@ The command refuses to overwrite an existing output. It writes only synthetic te
 
 - VP8 + Vorbis in Matroska is a permissive evaluation format; this is not yet the intended user-facing MP4/H.264 + AAC format.
 - No pause/resume, camera composition, resampling policy, pixel conversion policy beyond GStreamer elements, device integration, hardware encoding, crash recovery, transactional publication, or independent-player validation is claimed.
-- The prototype currently feeds synthetic data from a single producer thread. A future measurement pass must add bounded producer queues, separate producer workers, explicit backpressure/drop accounting, and deterministic teardown tests before performance conclusions.
+- The prototype currently feeds synthetic data from a single producer thread. The bounded queue in `validation.rs` is a single-threaded reference model, not the producer queue used by the pipeline. A future measurement pass must add bounded producer queues, separate producer workers, explicit backpressure/drop accounting, and deterministic teardown tests before performance conclusions.
 - RSS, CPU, startup, A/V drift, queue high-water marks, and stop-to-EOS measurements are not yet collected.
 - Native plugin inventory, codec redistribution terms, CVE/RustSec audit, and clean-machine Windows/Linux packaging remain pending.
 
@@ -63,4 +63,4 @@ Record OS release, hardware, runtime version, plugins, Rust version, build type 
 
 ## Phase 2 validation evidence
 
-No independent-player, bounded-overload, long-run drift, hardware performance, native license/plugin, or clean-machine packaging evidence is recorded by this PoC PR. CI checks compilation, tests, Clippy and formatting only. Do not interpret a green workflow as passing the evaluation matrix above.
+No GStreamer integration-test, independent-player, actual bounded-overload, long-run drift, hardware performance, native license/plugin, or clean-machine packaging evidence is recorded by this PoC PR. CI checks compilation, reference-model tests, Clippy and formatting only. Do not interpret a green workflow as passing the evaluation matrix above.
