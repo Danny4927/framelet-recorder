@@ -94,11 +94,7 @@ impl<T> MediaProducer<T> {
         self.try_push_inner(item, false)
     }
 
-    fn try_push_inner(
-        &self,
-        item: T,
-        count_rejection: bool,
-    ) -> Result<(), QueueSendError<T>> {
+    fn try_push_inner(&self, item: T, count_rejection: bool) -> Result<(), QueueSendError<T>> {
         let mut queued = self.metrics.queued.load(Ordering::Relaxed);
         loop {
             if queued >= self.metrics.capacity {
@@ -246,7 +242,9 @@ mod tests {
             (received, consumer.metrics())
         });
         let a = thread::spawn(move || {
-            (0..1_000).filter(|value| first.try_push(*value).is_ok()).count()
+            (0..1_000)
+                .filter(|value| first.try_push(*value).is_ok())
+                .count()
         });
         let b = thread::spawn(move || {
             (1_000..2_000)
