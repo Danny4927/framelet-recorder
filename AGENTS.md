@@ -29,9 +29,22 @@ Read `SPECIFICATION.md`, `SECURITY.md`, and `docs/architecture/README.md` before
 
 If a requirement cannot be implemented without first-party unsafe code, stop and explain the blocker. Do not work around the rule.
 
-## Architecture
+## Architecture (binding)
 
-- Keep UI, application core, capture adapters, media pipeline, and storage separated.
+Framelet MUST follow hexagonal architecture (ports and adapters) as a non-negotiable design constraint. This applies to every production feature and every implementation phase.
+
+- The application core owns use cases, business rules, recording lifecycle, and application state.
+- Define ports as application-owned Rust traits/types at the core boundary. Core may depend on domain types and port abstractions only.
+- Implement inbound adapters for UI/commands and outbound adapters for capture devices, OS APIs, media processing, filesystem, and configuration.
+- The desktop executable is the sole composition root: it constructs concrete adapters and injects them into core use cases.
+- Dependency direction points inward: adapters depend on core-owned contracts; core never imports or names concrete adapters, Slint, OS APIs, or media libraries.
+- Do not pass framework/library types across ports. Translate them into application-owned types and typed errors at adapter boundaries.
+- Keep orchestration in application services/use cases; keep device, codec, muxer, and filesystem mechanics in adapters. Do not create a generic service layer that bypasses ports.
+- Add architecture tests or compile-time crate-boundary checks where practical. Tests for core use cases must run with fakes and without physical devices.
+- Every structural change MUST update the corresponding arc42 section and add/update an ADR when the decision is significant. The implementation roadmap in `docs/architecture/implementation-roadmap.md` is the sequencing authority.
+- A feature that violates these rules is not complete, even if it works end-to-end.
+
+Keep UI, application core, capture adapters, media pipeline, and storage separated.
 - Keep OS-specific APIs behind internal traits.
 - UI must never block on capture, encoding, or disk I/O.
 - Use bounded channels and explicit cancellation.
