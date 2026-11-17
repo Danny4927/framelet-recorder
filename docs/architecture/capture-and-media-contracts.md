@@ -50,6 +50,14 @@ Audio timestamps should be mapped from backend stream clock/sample position to t
 
 `framelet-capture-api` provides `AudioBlockQueue`, a bounded FIFO for owned blocks passed between worker threads. It is deliberately not real-time safe: queue methods may allocate and require exclusive mutable access. Never call it inside an audio device callback.
 
+The queue fixes sample rate and channel count at construction and bounds both block count and maximum interleaved samples per block. It rejects mismatched formats, oversized blocks, and non-finite sample values. When full, it rejects the newest block, increments a rejection counter, and retains accepted blocks. The caller must surface `AudioTransportFull` as an explicit overrun/failure.
+
+The CPAL PoC's preallocated SPSC ring remains the callback-facing boundary. A consumer worker drains that ring, creates owned `AudioBlock` values, and then publishes them to the worker-level queue.
+
+### 4.1 Audio worker transport
+
+`framelet-capture-api` provides `AudioBlockQueue`, a bounded FIFO for owned blocks passed between worker threads. It is deliberately not real-time safe: queue methods may allocate and require exclusive mutable access. Never call it inside an audio device callback.
+
 The queue fixes sample rate and channel count at construction and bounds both block count and maximum interleaved samples per block. It rejects mismatched formats, oversized blocks, and non-finite sample values. When full, it rejects the newest block, increments a rejection counter, and retains accepted blocks. The caller must surface `AudioTransportFull` as an explicit overrun/failure; it must not silently retry or discard accepted audio.
 
 The CPAL PoC's preallocated SPSC ring remains the callback-facing boundary. A consumer worker drains that ring, creates owned `AudioBlock` values, and then publishes them to the worker-level queue.
