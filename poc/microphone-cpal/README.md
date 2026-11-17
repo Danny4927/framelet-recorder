@@ -5,7 +5,7 @@ This standalone package probes microphone enumeration and safe F32 input capture
 ## Scope
 
 - Uses CPAL 0.18.2, pinned exactly.
-- Linux backends are PipeWire and ALSA; CPAL's default host chooses a backend.
+- Linux enables the CPAL PipeWire backend explicitly; ALSA is compiled through CPAL's target-specific Linux backend dependency.
 - Lists available input devices and selects by the displayed index for a short capture.
 - Starts capture only after the explicit `--record` command.
 - Accepts only the device's default F32 input format.
