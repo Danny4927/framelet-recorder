@@ -236,7 +236,6 @@ fn consume_available_blocks(
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -247,7 +246,10 @@ mod tests {
 
     #[test]
     fn duration_defaults_to_ten_seconds() {
-        assert_eq!(parse_duration(&args(&[])).expect("default duration"), DEFAULT_DURATION);
+        assert_eq!(
+            parse_duration(&args(&[])).expect("default duration"),
+            DEFAULT_DURATION
+        );
     }
 
     #[test]
