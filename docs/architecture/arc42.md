@@ -317,7 +317,8 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | Risk | Impact | Mitigation / evidence required |
 |---|---|---|
 | Safe wrapper lacks required OS behavior | Platform capability blocked under no-unsafe policy | Test public safe APIs early; defer rather than add unsafe glue |
-| GStreamer runtime/plugin footprint | Package complexity and support burden | Minimal plugin inventory and clean-machine PoC |\n| Dual-stream timestamp and EOS behavior | A/V drift or incomplete containers | Independent playback, synthetic clock tests, injected errors and stop-to-EOS measurements in the isolated media PoC |
+| GStreamer runtime/plugin footprint | Package complexity and support burden | Minimal plugin inventory and clean-machine PoC |
+| Dual-stream timestamp and EOS behavior | A/V drift or incomplete containers | Independent playback, synthetic clock tests, injected errors and stop-to-EOS measurements in the isolated media PoC |
 | Wayland desktop differences | Uneven Linux behavior | GNOME and KDE tests; portal session/cancel handling |
 | Audio overload | Gaps and sync errors | Bounded ring buffer, counters, stress/device tests |
 | Pause semantics differ | Timestamp discontinuities | Common timeline contract and conformance tests |

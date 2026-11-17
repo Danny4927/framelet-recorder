@@ -15,6 +15,7 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0009](ADR-0009-bounded-audio-block-transport.md) | Bounded worker-level audio block transport | Accepted for backend-neutral API |
 | [ADR-0010](ADR-0010-binding-hexagonal-architecture-and-arc42.md) | Make hexagonal architecture and arc42 compliance binding | Accepted |
 | [ADR-0011](ADR-0011-domain-driven-design.md) | Make Domain-Driven Design binding for the application domain | Accepted |
-| [ADR-0012](ADR-0012-recording-core-port-boundaries.md) | Define granular Recording bounded-context ports | Accepted |\n| [ADR-0013](ADR-0013-media-pipeline-evaluation.md) | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
+| [ADR-0012](ADR-0012-recording-core-port-boundaries.md) | Define granular Recording bounded-context ports | Accepted |
+| [ADR-0013](ADR-0013-media-pipeline-evaluation.md) | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.

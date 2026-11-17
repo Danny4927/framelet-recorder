@@ -87,11 +87,14 @@ Deliverables:
 - Compare GStreamer with FFmpeg-based Rust bindings and viable pure-Rust media stacks; record the selected approach (or continued deferral) in a superseding ADR. Do not let the candidate runtime leak through core ports.
 
 Exit criteria:
-- [ ] Representative sample recordings play in at least two independent players on each tested OS.\n- [ ] Output target formats are validated separately; diagnostic Matroska/VP8/Vorbis does not approve MP4/H.264/AAC.
-- [ ] Finalization and injected failure tests pass, including EOS, encoder/sink errors, timeout and interruption behavior.\n- [ ] Bounded producer queues, explicit backpressure, audio-gap handling and control-path independence are verified.
+- [ ] Representative sample recordings play in at least two independent players on each tested OS.
+- [ ] Output target formats are validated separately; diagnostic Matroska/VP8/Vorbis does not approve MP4/H.264/AAC.
+- [ ] Finalization and injected failure tests pass, including EOS, encoder/sink errors, timeout and interruption behavior.
+- [ ] Bounded producer queues, explicit backpressure, audio-gap handling and control-path independence are verified.
 - [ ] Dependency/native plugin inventory and redistribution licenses are reviewed.
 - [ ] No unsafe code is introduced into first-party crates.
-- [ ] Selection/defer decision is recorded in an ADR and arc42 sections 5, 7, 8, 11 updated.\n- [ ] Measured CPU, process RSS, startup, throughput, queue high-water marks, A/V drift and stop-to-finalize latency are recorded with hardware/software context.
+- [ ] Selection/defer decision is recorded in an ADR and arc42 sections 5, 7, 8, 11 updated.
+- [ ] Measured CPU, process RSS, startup, throughput, queue high-water marks, A/V drift and stop-to-finalize latency are recorded with hardware/software context.
 
 ## Phase 3 — Transactional local storage
 
