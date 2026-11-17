@@ -32,7 +32,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut devices = Vec::new();
     for (index, device) in host.input_devices()?.enumerate() {
         descriptors.push(SourceDescriptor {
-            id: SourceId::new(format!("cpal-input-{index}"))?,
+            id: SourceId::new(format!("cpal-input-{index}"))
+                .map_err(|error| format!("invalid microphone source id: {error:?}"))?,
             name: format!("Input device {index}"),
             kind: SourceKind::Microphone,
         });
@@ -110,7 +111,8 @@ fn record_device(device: &cpal::Device, duration: Duration, output: PathBuf) -> 
         .and_then(|rate| rate.checked_mul(channels_usize))
         .and_then(|samples| samples.checked_mul(RING_SECONDS))
         .ok_or("ring capacity overflow")?;
-    let ring = Arc::new(AudioSampleRing::new(ring_capacity)?);
+    let ring = Arc::new(AudioSampleRing::new(ring_capacity)
+        .map_err(|error| format!("unable to allocate audio ring: {error:?}"))?);
     let callback_failed = Arc::new(AtomicBool::new(false));
     let callback_error = Arc::clone(&callback_failed);
     let config: StreamConfig = supported.into();
@@ -167,7 +169,8 @@ fn consume_available_blocks(
         let frames = count / usize::from(channels);
         let timestamp = Duration::from_secs_f64(*first_sample_position as f64 / f64::from(sample_rate));
         let block = AudioBlock::new(sample_rate, channels, timestamp, Some(*first_sample_position),
-            scratch[..count].to_vec())?;
+            scratch[..count].to_vec())
+            .map_err(|error| format!("invalid captured audio block: {error:?}"))?;
         writer.write_block(&block)?;
         *first_sample_position = first_sample_position.checked_add(u64::try_from(block.frame_count())?)
             .ok_or("audio sample position overflow")?;
