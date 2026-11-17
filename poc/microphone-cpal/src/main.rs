@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::traits::{HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use framelet_capture_api::{SourceDescriptor, SourceId, SourceKind};
 
@@ -30,9 +30,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut devices = Vec::new();
 
     for (index, device) in host.input_devices()?.enumerate() {
-        let name = device.name().unwrap_or_else(|_| format!("Input device {index}"));
+        let name = format!("Input device {index}");
         descriptors.push(SourceDescriptor {
-            id: SourceId::new(format!("cpal-input-{index}"))?,
+            id: SourceId::new(format!("cpal-input-{index}")).map_err(|error| format!("invalid source identifier: {error:?}"))?,
             name,
             kind: SourceKind::Microphone,
         });
@@ -67,7 +67,7 @@ fn parse_duration(args: &[String]) -> Result<Duration, Box<dyn Error>> {
         .iter()
         .position(|arg| arg == "--duration-seconds")
         .and_then(|position| args.get(position + 1))
-        .map(str::parse::<u64>)
+        .map(|value| value.parse::<u64>())
         .transpose()?
         .unwrap_or(DEFAULT_DURATION.as_secs());
     if seconds == 0 {
