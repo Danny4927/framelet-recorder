@@ -9,7 +9,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 use framelet_capture_api::{SourceDescriptor, SourceId, SourceKind};
 
-use framelet_microphone_poc::AudioSampleRing;
+use framelet_microphone_poc::{AudioSampleRing, build_f32_stream};
 
 const DEFAULT_DURATION: Duration = Duration::from_secs(10);
 const RING_SECONDS: usize = 2;
@@ -101,19 +101,15 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
     let ring = Arc::new(AudioSampleRing::new(ring_capacity)?);
     let callback_failed = Arc::new(AtomicBool::new(false));
     let callback_error = Arc::clone(&callback_failed);
-    let callback_ring = Arc::clone(&ring);
     let config: StreamConfig = supported.into();
 
-    let stream = cpal::DeviceTrait::build_input_stream(
+    let stream = build_f32_stream(
         device,
-        &config,
-        move |samples: &[f32], _info: &cpal::InputCallbackInfo| {
-            callback_ring.push_from_callback(samples);
-        },
+        config,
+        Arc::clone(&ring),
         move |_error: cpal::Error| {
             callback_error.store(true, Ordering::Release);
         },
-        Some(Duration::from_secs(1)),
     )?;
 
     // CPAL 0.18 returns streams paused on all platforms; start explicitly.
