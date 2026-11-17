@@ -108,7 +108,10 @@ mod tests {
 
     #[test]
     fn rejects_zero_capacity() {
-        assert_eq!(AudioSampleRing::new(0).err(), Some(RingBufferError::ZeroCapacity));
+        assert_eq!(
+            AudioSampleRing::new(0).err(),
+            Some(RingBufferError::ZeroCapacity)
+        );
     }
 
     #[test]
@@ -133,12 +136,51 @@ mod tests {
     #[test]
     fn wraps_around_without_changing_order() {
         let ring = AudioSampleRing::new(3).expect("test setup");
-        ring.push_from_callback(&[1.0, 2.0]);
+        assert_eq!(ring.push_from_callback(&[1.0, 2.0]), 2);
         let mut first = [0.0; 2];
-        ring.pop_into(&mut first);
-        ring.push_from_callback(&[3.0, 4.0, 5.0]);
+        assert_eq!(ring.pop_into(&mut first), 2);
+        assert_eq!(first, [1.0, 2.0]);
+
+        assert_eq!(ring.push_from_callback(&[3.0, 4.0, 5.0]), 3);
         let mut second = [0.0; 3];
         assert_eq!(ring.pop_into(&mut second), 3);
         assert_eq!(second, [3.0, 4.0, 5.0]);
+
+        assert_eq!(ring.push_from_callback(&[6.0, 7.0]), 2);
+        let mut third = [0.0; 2];
+        assert_eq!(ring.pop_into(&mut third), 2);
+        assert_eq!(third, [6.0, 7.0]);
+    }
+}
+
+#[cfg(test)]
+mod loom_tests {
+    use loom::sync::atomic::{AtomicUsize, Ordering};
+    use loom::sync::Arc;
+    use loom::thread;
+
+    #[test]
+    fn publication_order_is_visible_to_consumer() {
+        loom::model(|| {
+            let slot = Arc::new(AtomicUsize::new(0));
+            let head = Arc::new(AtomicUsize::new(0));
+            let producer_slot = Arc::clone(&slot);
+            let producer_head = Arc::clone(&head);
+            let producer = thread::spawn(move || {
+                producer_slot.store(42, Ordering::Relaxed);
+                producer_head.store(1, Ordering::Release);
+            });
+
+            let consumer_slot = Arc::clone(&slot);
+            let consumer_head = Arc::clone(&head);
+            let consumer = thread::spawn(move || {
+                if consumer_head.load(Ordering::Acquire) == 1 {
+                    assert_eq!(consumer_slot.load(Ordering::Relaxed), 42);
+                }
+            });
+
+            producer.join().expect("producer thread");
+            consumer.join().expect("consumer thread");
+        });
     }
 }
