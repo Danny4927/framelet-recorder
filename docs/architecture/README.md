@@ -24,3 +24,6 @@ Hexagonal architecture is mandatory across all application capabilities; see [AD
 | GStreamer, CPAL, nokhwa, PipeWire/Wayland and Windows capture wrappers | Candidates only |
 | Exact frame/audio transport and queue sizing | Open; measure in PoC |
 | arc42 documentation completeness | All 12 sections required; reviewed with every structural change | Binding |
+
+
+**Phase 1 status:** The core now owns the initial Recording aggregate and lifecycle use cases. See the [implementation roadmap](implementation-roadmap.md) for remaining acceptance gates; capture, media and storage adapters are not yet production-wired.

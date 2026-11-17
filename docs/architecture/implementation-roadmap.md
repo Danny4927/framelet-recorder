@@ -24,7 +24,7 @@ This roadmap defines the intended implementation order, dependencies, deliverabl
 | Phase | Scope | Status | Depends on |
 |---|---|---|---|
 | 0 | Architecture baseline, capture contracts, bounded audio worker transport | Current PR | — |
-| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Planned | 0 |
+| 1 | Core use cases, inbound/outbound ports, recording session orchestration | In progress — this PR | 0 |
 | 2 | Media pipeline evaluation and backend decision | Planned | 0, 1 (port requirements) |
 | 3 | Transactional local storage adapter and recovery contract | Planned | 1 |
 | 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
@@ -56,15 +56,21 @@ Exit criteria:
 
 ## Phase 1 — Core use cases and ports
 
+**Current PR:** Phase 1 initial implementation (Recording aggregate, use-case port and resource port). The PR establishes the first executable domain/application slice; production adapters, durable session storage, and desktop composition remain follow-up work.
+
 Deliverables:
-- Define application-owned inbound ports/use cases: prepare, start, pause, resume, stop, cancel, and state/metrics subscription.
+- Define application-owned inbound port/use cases for prepare, start, pause, resume, stop, cancel, and state query. Metrics/event subscription remains a follow-up once event semantics are specified.
 - Define outbound ports for screen, camera, microphone, media pipeline, storage, clock, and settings as required by concrete use cases.
-- Introduce a recording session abstraction with explicit ownership, cancellation, idempotent stop, and typed outcomes.
+- Introduce a Recording session aggregate with explicit identity, configuration, lifecycle state, cancellation, finalization outcome, and artifact publication only after successful finalization.
 - Make the core lifecycle authoritative; adapters report events and never decide application state.
-- Add fake adapters and deterministic tests for legal/illegal transitions, cancellation, device loss, stop ordering, and finalization failures.
+- Add a fake resource adapter and deterministic tests for legal/illegal transitions, cancellation, orchestration order, duplicate session identity, and finalization failures. Device-loss contract tests follow when source-specific ports are defined.
 
 Exit criteria:
 - [ ] Core has no concrete UI, OS, capture, media, or filesystem dependency.
+- [ ] Recording aggregate owns lifecycle transitions and rejects illegal operations.
+- [ ] Configuration invariants prevent optional microphone duplication in microphone-only mode.
+- [ ] Finalized artifact is exposed only after successful resource finalization.
+- [ ] Application use cases are defined by an inbound port and depend on a core-owned resource port.
 - [ ] Use cases can be exercised without hardware or native media runtimes.
 - [ ] Every port has a documented ownership, threading, error, cancellation, and shutdown contract.
 - [ ] Architecture/dependency checks prevent inward dependency violations.

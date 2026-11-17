@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.4 — bounded worker-level audio transport  
+**Version:** 0.5 — Phase 1 Recording core and ports  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, and a bounded worker-level audio queue, an initial Recording session aggregate, application use cases, and a core-owned resource port. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -79,6 +79,8 @@ Domain-Driven Design complements the hexagonal architecture: the domain model an
 9. Capture/media dependencies remain candidates until real-device PoCs and packaging/security review pass.
 
 ## 5. Building Block View
+
+The Phase 1 core now defines `RecordingSession` as the initial aggregate, `RecordingConfiguration` and `RecordingArtifact` as validated value concepts, and `RecordingId` as session identity. The `RecordingUseCases` inbound port defines lifecycle operations; `RecordingResources` is the outbound port used for resource preparation, capture control, draining and finalization. The first application service uses a fakeable resource implementation and keeps concrete backend types outside the core. Durable persistence, asynchronous event subscriptions, source-specific port splitting, and desktop composition remain out of scope for this phase slice.
 
 The detailed backend-neutral media boundary is specified in [Capture and media contracts](capture-and-media-contracts.md). It defines source identity/capabilities, owned video/audio blocks, validation, clock mapping, events/errors, bounded transport, and cancellation.
 
@@ -172,7 +174,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
-| core | Mode enum and transition predicate; orchestration incomplete |
+| core | Recording session aggregate, validated configuration/artifact concepts, inbound use-case port and outbound resource port; desktop composition and durable state remain open |
 | Media pipeline/compositing/encoding | Not implemented |
 | Storage/recovery | Not implemented |
 | Platform packaging | Not implemented |
@@ -302,6 +304,8 @@ See [ADR index](adr/README.md).
 | Q-07 | 60-minute recording | Bounded memory and stable timestamps/sync | Long-run device test |
 | Q-08 | Offline operation | Recording remains usable; no network attempted | Offline/network observation |
 | Q-09 | High-rate metrics | UI responsive; metrics coalesced | UI load test |
+| Q-10 | Resource finalization fails | Session becomes Failed and never exposes a completed artifact | Fake-port application test |
+| Q-11 | Illegal lifecycle command | Core rejects the command without invoking the external resource port | Aggregate/application unit test |
 
 SPECIFICATION.md contains performance targets. Publish measurements only with hardware, OS, backend, resolution, frame rate, codecs, duration, and encoder mode.
 
