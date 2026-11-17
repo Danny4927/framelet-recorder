@@ -105,8 +105,18 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
             .create_new(true)
             .open(&temporary_path)
             .map_err(map_io_error)?;
-        reservation.flush().map_err(map_io_error)?;
-        reservation.sync_all().map_err(map_io_error)?;
+
+        // If syncing the reservation fails, do not leave an untracked candidate.
+        if let Err(error) = reservation.flush().and_then(|()| reservation.sync_all()) {
+            drop(reservation);
+            let cleanup_result = fs::remove_file(&temporary_path);
+            return match cleanup_result {
+                Ok(()) => Err(map_io_error(error)),
+                Err(cleanup_error) => Err(PortError::Failed(format!(
+                    "could not sync temporary recording ({error}); cleanup also failed ({cleanup_error})"
+                ))),
+            };
+        }
         drop(reservation);
 
         self.active.insert(
@@ -138,13 +148,20 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         // It fails closed on filesystems without hard-link support.
         fs::hard_link(&pending.temporary_path, &pending.final_path).map_err(map_io_error)?;
 
-        // If removing the temporary name fails, the published file remains valid;
-        // keep the active entry so the caller can inspect/retry cleanup.
-        fs::remove_file(&pending.temporary_path).map_err(map_io_error)?;
+        // Construct the application-owned descriptor before committing the
+        // publication. This keeps all fallible validation ahead of temp cleanup.
         let final_path = pending.final_path.clone();
+        let artifact = RecordingArtifact::new(final_path.to_string_lossy().into_owned())
+            .map_err(|error| PortError::Failed(error.to_string()))?;
+
+        // The destination is now published. A cleanup failure must not turn a
+        // successful publication into an ambiguous retry that could report failure
+        // while leaving a complete recording visible. Retain the active entry so
+        // the caller can retry cleanup; subsequent publish detects the existing
+        // destination and refuses to overwrite it.
+        fs::remove_file(&pending.temporary_path).map_err(map_io_error)?;
         self.active.remove(session);
-        RecordingArtifact::new(final_path.to_string_lossy().into_owned())
-            .map_err(|error| PortError::Failed(error.to_string()))
+        Ok(artifact)
     }
 
     fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError> {
