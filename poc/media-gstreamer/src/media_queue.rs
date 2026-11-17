@@ -9,8 +9,11 @@
 use std::sync::{
     Arc,
     atomic::{AtomicU64, AtomicUsize, Ordering},
-    mpsc::{Receiver, SyncSender, TryRecvError, TrySendError, sync_channel},
+    mpsc::{Receiver, SyncSender, TrySendError, sync_channel},
 };
+
+#[cfg(test)]
+use std::sync::mpsc::TryRecvError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct QueueMetricsSnapshot {
