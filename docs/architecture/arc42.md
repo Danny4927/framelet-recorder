@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.8 — Phase 2 media evaluation validation in progress  
+**Version:** 0.9 — Phase 3 transactional storage adapter slice  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application; media processing, storage finalization, and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application. The new filesystem storage adapter implements the core storage port as an isolated crate; it is not yet composed with a production media writer. End-to-end storage finalization and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
@@ -152,12 +152,12 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
 | Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska EOS finalization; no production adapter, independent playback proof, overload validation, or benchmark evidence yet |
-| Storage/recovery | Not implemented |
+| Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery; no production media writer or composition yet |
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
 
-The following sequences describe the target interaction across the granular ports. In the Phase 1 implementation, the use-case service is exercised with a fakeable `RecordingResources` facade; concrete screen/camera/microphone/media/storage adapters and the desktop composition root are deliberately not wired yet. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
+The following sequences describe the target interaction across the granular ports. In the current implementation, the use-case service is exercised with a fakeable `RecordingResources` facade. The `framelet-storage` filesystem adapter now exists behind `RecordingStoragePort`, but concrete screen/camera/microphone/media/storage adapters and the desktop composition root are not yet wired. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
 
 ### 6.1 Prepare and start
 
@@ -248,11 +248,11 @@ Typed errors cross module boundaries and become actionable UI messages. Preserve
 
 ### Testing
 
-Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, queue overload behavior, terminal EOS/error handling, and incomplete-output cleanup. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
+Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, queue overload behavior, terminal EOS/error handling, and incomplete-output cleanup. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery; platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
 
 ## 9. Architecture Decisions
 
-See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md); the next validation slice is implementation work only and does not supersede the deferred production choice in ADR-0004.
+See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in [ADR-0013](adr/ADR-0013-media-pipeline-evaluation.md). The filesystem storage adapter slice is recorded in [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md); it does not supersede the deferred production media choice in ADR-0004.
 
 | ADR | Decision | Status |
 |---|---|---|
@@ -269,6 +269,7 @@ See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in 
 | ADR-0011 | Make Domain-Driven Design binding for the application domain | Accepted |
 | ADR-0012 | Define granular Recording bounded-context port boundaries | Accepted |
 | ADR-0013 | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
+| ADR-0014 | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |
 
 ## 10. Quality Requirements
 
@@ -302,6 +303,7 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | Audio overload | Gaps and sync errors | Bounded ring buffer, counters, stress/device tests |
 | Pause semantics differ | Timestamp discontinuities | Common timeline contract and conformance tests |
 | MP4 crash recovery limited | Partial file may be unusable | Temp output, documented recovery, evaluate fragmented formats |
+| Hard-link publication unavailable | Filesystem may not support same-volume hard links | Fail closed; validate target filesystems and evaluate safe no-replace alternative only through a new ADR |
 | Device formats vary | Unsupported mode or expensive conversion | Explicit negotiation and capability reporting |
 | Plugin discovery risk | Supply-chain/runtime loading risk | Explicit plugin allowlist and packaged paths |
 | Capture API too small for streaming | Expensive API rework | Design ownership and event contract during PoC |

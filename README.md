@@ -41,11 +41,12 @@ System audio capture is out of scope.
 
 ## Status
 
-The repository contains the product and engineering specification, the Recording core/use cases and ports, safe media data contracts, a bounded worker-level audio block queue, and isolated Wayland, CPAL microphone, and GStreamer media proof-of-concepts. The GStreamer PoC currently demonstrates synthetic dual-stream appsrc wiring and EOS-driven Matroska finalization only. CPAL and GStreamer remain outside the production workspace. No production media backend is approved; independent playback, bounded overload behavior, A/V drift/performance measurements, security review, and clean-machine packaging validation remain open.
+The repository contains the product and engineering specification, the Recording core/use cases and ports, safe media data contracts, a bounded worker-level audio block queue, and isolated Wayland, CPAL microphone, and GStreamer media proof-of-concepts. The GStreamer PoC currently demonstrates synthetic dual-stream appsrc wiring and EOS-driven Matroska finalization only. CPAL and GStreamer remain outside the production workspace. No production media backend is approved; independent playback, bounded overload behavior, A/V drift/performance measurements, security review, and clean-machine packaging validation remain open. The new `framelet-storage` crate provides an isolated transactional filesystem adapter (exclusive temporary output, no-replace publication, abort, and orphan discovery); production media wiring and crash-durability validation remain open.
 
 ## Documentation
 
 - [Architecture (arc42 + ADRs)](docs/architecture/README.md)
+- [Transactional filesystem storage adapter](crates/storage/README.md)
 - [Product and technical specification](SPECIFICATION.md)
 - [Security policy and engineering rules](SECURITY.md)
 - [Capture backend PoCs](docs/CAPTURE_POC.md)
