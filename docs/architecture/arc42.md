@@ -1,10 +1,10 @@
 # Framelet — arc42 Software Architecture
 
-**Version:** 0.9 — Phase 3 transactional storage adapter slice  
+**Version:** 0.10 — Phase 3 storage failure-path hardening slice  
 **Date:** 17 November 2026  
 **Status:** Proposed architecture; capture and media technology choices remain subject to PoC gates.
 
-> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application. The new filesystem storage adapter implements the core storage port as an isolated crate; it is not yet composed with a production media writer. End-to-end storage finalization and real-device validation remain open.
+> This document describes the intended MVP architecture. The repository currently contains a Slint shell, safe capture data contracts, an isolated Wayland frame PoC, an isolated CPAL microphone PoC, a bounded worker-level audio queue, the initial Recording session aggregate and use cases, core-owned source/media/storage/clock/settings/repository/event/metrics ports, and an isolated GStreamer media evaluation PoC. No production media backend has been selected. Native capture has not been integrated into the production application. The filesystem storage adapter implements the core storage port as an isolated crate; it is not yet composed with a production media writer. Its latest hardening adds collision-safe temporary-name reservation retries and regression coverage for existing-file collisions, aborted candidates, and publication behavior. End-to-end storage finalization, injected filesystem failures, power-loss durability, and real-device validation remain open.
 
 ## 1. Introduction and Goals
 
