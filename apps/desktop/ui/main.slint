@@ -88,43 +88,35 @@ export component MainWindow inherits Window {
         Rectangle {
             background: #1a2230;
             border-radius: 12px;
-            height: 116px;
+            height: 122px;
             VerticalLayout {
-                padding: 14px;
-                spacing: 8px;
+                padding: 12px;
+                spacing: 7px;
                 Text { text: "SPEICHERORT"; color: #8491a5; font-size: 10px; font-weight: 700; }
                 HorizontalLayout {
                     spacing: 8px;
-                    Text { text: root.output-directory; color: #e1e7f0; vertical-alignment: center; overflow: elide; }
+                    Text {
+                        text: root.output-directory == "" ? "Wird beim Start gesetzt" : root.output-directory;
+                        color: #e1e7f0;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
                     Text { text: "Ordnerauswahl folgt"; color: #8491a5; vertical-alignment: center; }
                 }
                 HorizontalLayout {
                     spacing: 8px;
-                    Button { text: "Temporäre Dateien prüfen"; clicked => { root.scan-recovery(); } }
+                    Button {
+                        text: "Temporäre Dateien prüfen";
+                        width: 190px;
+                        clicked => { root.scan-recovery(); }
+                    }
                     Text { text: root.recovery-message; color: #9aa8bb; vertical-alignment: center; overflow: elide; }
                 }
-            }
-        }
-        Rectangle {
-            background: #1a2230;
-            border-radius: 12px;
-            height: 76px;
-            VerticalLayout {
-                padding: 16px;
-                spacing: 8px;
-                Text { text: "AUDIO"; color: #8491a5; font-size: 10px; font-weight: 700; }
-                Text { text: "Mikrofon-Auswahl und Audioaufnahme sind noch nicht integriert."; color: #c4cedd; }
-            }
-        }
-        Rectangle {
-            background: #1a2230;
-            border-radius: 12px;
-            height: 48px;
-            HorizontalLayout {
-                padding: 14px;
-                spacing: 8px;
-                Text { text: "OK"; color: #69d69a; vertical-alignment: center; }
-                Text { text: root.status-message; color: #c4cedd; vertical-alignment: center; }
+                Text {
+                    text: "Mikrofon-Auswahl und Audioaufnahme sind noch nicht integriert.";
+                    color: #9aa8bb;
+                    font-size: 11px;
+                }
             }
         }
         VerticalLayout {
