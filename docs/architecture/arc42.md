@@ -38,6 +38,10 @@ Stakeholders: end users (predictable private recordings), maintainers (auditable
 - Monotonic timestamps drive media synchronization; validate external dimensions and use checked arithmetic.
 - If a capability cannot be implemented through a suitable safe API, defer it or select another backend; never weaken the safety rule.
 
+## Planning and work tracking
+
+The authoritative project plan and progress tracking live in version-controlled Markdown files in this repository. GitHub Issues are not used for planning, backlog, bug, task, or phase tracking. Update the roadmap, specification, arc42 sections, and ADRs through reviewed Git changes as appropriate. Pull requests are used for code review and delivery only.
+
 ## 3. Context and Scope
 
 Framelet is one desktop process with no server-side counterpart and no internet requirement.
@@ -65,6 +69,8 @@ External interfaces:
 No telemetry, update checks, upload, remote control, or cloud processing is in scope.
 
 ## 4. Solution Strategy
+
+**Incremental delivery strategy:** implement user-visible capabilities as vertical slices. Connect the UI, core use case, platform/media/storage adapters, and desktop composition root as soon as each capability is ready; do not postpone integration to a final phase. Each slice must be exercisable in the running application, provide truthful availability/error states, and include a manual UI test procedure. Track implementation, automated testing, UI integration, and real-device validation as separate evidence states.
 
 Domain-Driven Design complements the hexagonal architecture: the domain model and its invariants belong to the core; application use cases coordinate domain behavior and ports; adapters translate external concerns. The initial domain is the single Recording bounded context. Maintain a ubiquitous language and introduce additional contexts only when distinct models and ownership boundaries justify them.
 
