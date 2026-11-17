@@ -83,6 +83,43 @@ impl FileSystemRecordingStorage {
             self.output_directory.join(format!("{stem}.framelet")),
         )
     }
+
+    fn reserve_candidate(
+        &self,
+        recording_id: RecordingId,
+        first_sequence: u64,
+    ) -> Result<(u64, PathBuf, PathBuf), PortError> {
+        let mut sequence = first_sequence;
+        loop {
+            let (temporary_path, final_path) = self.paths(recording_id, sequence);
+            match OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&temporary_path)
+            {
+                Ok(mut reservation) => {
+                    if let Err(error) = reservation.flush().and_then(|()| reservation.sync_all()) {
+                        drop(reservation);
+                        let cleanup = fs::remove_file(&temporary_path);
+                        return match cleanup {
+                            Ok(()) => Err(map_io_error(error)),
+                            Err(cleanup_error) => Err(PortError::Failed(format!(
+                                "could not sync temporary recording ({error}); cleanup also failed ({cleanup_error})"
+                            ))),
+                        };
+                    }
+                    drop(reservation);
+                    return Ok((sequence, temporary_path, final_path));
+                }
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                    sequence = sequence.checked_add(1).ok_or_else(|| {
+                        PortError::Failed("storage session identity exhausted".into())
+                    })?;
+                }
+                Err(error) => return Err(map_io_error(error)),
+            }
+        }
+    }
 }
 
 impl RecordingStoragePort for FileSystemRecordingStorage {
@@ -92,22 +129,12 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         _configuration: &RecordingConfiguration,
     ) -> Result<MediaSessionId, PortError> {
         let sequence = self.next_session;
-        self.next_session = self
-            .next_session
+        let session = MediaSessionId::new(format!("filesystem-{sequence}"))?;
+        let (reserved_sequence, temporary_path, final_path) =
+            self.reserve_candidate(recording_id, sequence)?;
+        self.next_session = reserved_sequence
             .checked_add(1)
             .ok_or_else(|| PortError::Failed("storage session identity exhausted".into()))?;
-        let session = MediaSessionId::new(format!("filesystem-{sequence}"))?;
-        let (temporary_path, final_path) = self.paths(recording_id, sequence);
-
-        // Exclusive creation is the collision-safe reservation; never truncate.
-        let mut reservation = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary_path)
-            .map_err(map_io_error)?;
-        reservation.flush().map_err(map_io_error)?;
-        reservation.sync_all().map_err(map_io_error)?;
-        drop(reservation);
 
         self.active.insert(
             session.clone(),
@@ -138,13 +165,20 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         // It fails closed on filesystems without hard-link support.
         fs::hard_link(&pending.temporary_path, &pending.final_path).map_err(map_io_error)?;
 
-        // If removing the temporary name fails, the published file remains valid;
-        // keep the active entry so the caller can inspect/retry cleanup.
-        fs::remove_file(&pending.temporary_path).map_err(map_io_error)?;
+        // Construct the application-owned descriptor before committing the
+        // publication. This keeps all fallible validation ahead of temp cleanup.
         let final_path = pending.final_path.clone();
+        let artifact = RecordingArtifact::new(final_path.to_string_lossy().into_owned())
+            .map_err(|error| PortError::Failed(error.to_string()))?;
+
+        // The destination is now published. A cleanup failure must not turn a
+        // successful publication into an ambiguous retry that could report failure
+        // while leaving a complete recording visible. Retain the active entry so
+        // the caller can retry cleanup; subsequent publish detects the existing
+        // destination and refuses to overwrite it.
+        fs::remove_file(&pending.temporary_path).map_err(map_io_error)?;
         self.active.remove(session);
-        RecordingArtifact::new(final_path.to_string_lossy().into_owned())
-            .map_err(|error| PortError::Failed(error.to_string()))
+        Ok(artifact)
     }
 
     fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError> {
@@ -217,6 +251,81 @@ mod tests {
         );
         assert!(!candidate.exists());
         assert!(storage.publish(&session).is_err());
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn begin_retries_colliding_temporary_names_without_overwriting() {
+        let directory = temp_dir("begin-collision");
+        let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
+        let first = storage
+            .begin(RecordingId::new(12), &configuration())
+            .expect("first begin");
+        let first_candidate = storage
+            .temporary_path(&first)
+            .expect("first candidate")
+            .to_path_buf();
+
+        // A stale candidate from a prior process may occupy the next deterministic
+        // name. The adapter must reserve a fresh name rather than truncate it.
+        let second_collision = directory.join(".framelet-pending-recording-12-2.part");
+        fs::write(&second_collision, b"orphan").expect("seed collision");
+        let second = storage
+            .begin(RecordingId::new(12), &configuration())
+            .expect("retry begin");
+        let second_candidate = storage
+            .temporary_path(&second)
+            .expect("second candidate")
+            .to_path_buf();
+
+        assert_ne!(first_candidate, second_candidate);
+        assert_ne!(second_candidate, second_collision);
+        assert_eq!(fs::read(&second_collision).expect("read orphan"), b"orphan");
+        storage.abort(&first).expect("abort first");
+        storage.abort(&second).expect("abort second");
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn publication_collision_never_replaces_existing_recording() {
+        let directory = temp_dir("publish-collision");
+        let existing = directory.join("recording-13-1.framelet");
+        fs::write(&existing, b"keep me").expect("seed existing file");
+        let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
+        let session = storage
+            .begin(RecordingId::new(13), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
+        fs::write(&candidate, b"new media").expect("write candidate");
+
+        assert!(storage.publish(&session).is_err());
+        assert_eq!(fs::read(&existing).expect("read existing"), b"keep me");
+        assert_eq!(
+            fs::read(&candidate).expect("candidate retained"),
+            b"new media"
+        );
+        storage.abort(&session).expect("abort");
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn abort_is_idempotent_when_candidate_was_already_removed() {
+        let directory = temp_dir("abort-missing");
+        let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
+        let session = storage
+            .begin(RecordingId::new(14), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
+        fs::remove_file(candidate).expect("remove candidate");
+
+        storage.abort(&session).expect("abort missing candidate");
+        assert!(storage.abort(&session).is_err());
         fs::remove_dir_all(directory).expect("cleanup");
     }
 
