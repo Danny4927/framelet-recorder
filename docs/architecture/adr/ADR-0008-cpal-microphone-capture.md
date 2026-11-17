@@ -42,7 +42,7 @@ The exact CPAL version is pinned. CPAL is licensed under Apache-2.0 and exposes 
 
 - Linux PipeWire and ALSA device enumeration, capture, stop, and hot-unplug tests.
 - Windows WASAPI device enumeration, capture, stop, and hot-unplug tests.
-- Validate actual F32 sample delivery, timing/sample-position strategy, callback xruns, ring overflow, and bounded RSS.
+- Validate actual F32 sample delivery, timing/sample-position strategy, callback xruns, ring overflow, and bounded RSS. The isolated ring has FIFO/overflow/wraparound unit tests plus a Loom publication-order model.
 - Review CPAL 0.18.2 source and all transitive native/unsafe boundaries.
 - Run `cargo audit`, `cargo deny check`, and where practical `cargo vet`.
 - Generate and commit a standalone lockfile; verify locked build/test/clippy.
