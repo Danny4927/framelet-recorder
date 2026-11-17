@@ -90,7 +90,7 @@ fn record_device(device: &cpal::Device, duration: Duration) -> Result<(), Box<dy
         return Err(format!("unsupported sample format: {:?}", supported.sample_format()).into());
     }
 
-    let sample_rate = supported.sample_rate().0;
+    let sample_rate = supported.sample_rate();
     let channels = supported.channels();
     let ring_capacity = usize::try_from(sample_rate)
         .ok()
