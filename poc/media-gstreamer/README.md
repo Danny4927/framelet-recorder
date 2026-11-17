@@ -60,3 +60,7 @@ Record OS release, hardware, runtime version, plugins, Rust version, build type 
 - Capture, encoding and file I/O stay outside the UI thread and device callbacks.
 - The core remains the authority for lifecycle, cancellation and artifact publication.
 - No media content is logged and the PoC has no network code.
+
+## Phase 2 validation evidence
+
+No independent-player, bounded-overload, long-run drift, hardware performance, native license/plugin, or clean-machine packaging evidence is recorded by this PoC PR. CI checks compilation, tests, Clippy and formatting only. Do not interpret a green workflow as passing the evaluation matrix above.
