@@ -160,22 +160,32 @@ mod loom_tests {
     use loom::thread;
 
     #[test]
-    fn publication_order_is_visible_to_consumer() {
+    fn producer_consumer_preserve_order_and_capacity() {
         loom::model(|| {
             let slot = Arc::new(AtomicUsize::new(0));
             let head = Arc::new(AtomicUsize::new(0));
+            let tail = Arc::new(AtomicUsize::new(0));
+
             let producer_slot = Arc::clone(&slot);
             let producer_head = Arc::clone(&head);
+            let producer_tail = Arc::clone(&tail);
             let producer = thread::spawn(move || {
-                producer_slot.store(42, Ordering::Relaxed);
-                producer_head.store(1, Ordering::Release);
+                let head_value = producer_head.load(Ordering::Relaxed);
+                let tail_value = producer_tail.load(Ordering::Acquire);
+                if head_value.wrapping_sub(tail_value) < 1 {
+                    producer_slot.store(42, Ordering::Relaxed);
+                    producer_head.store(head_value.wrapping_add(1), Ordering::Release);
+                }
             });
 
             let consumer_slot = Arc::clone(&slot);
             let consumer_head = Arc::clone(&head);
+            let consumer_tail = Arc::clone(&tail);
             let consumer = thread::spawn(move || {
-                if consumer_head.load(Ordering::Acquire) == 1 {
+                let tail_value = consumer_tail.load(Ordering::Relaxed);
+                if consumer_head.load(Ordering::Acquire) != tail_value {
                     assert_eq!(consumer_slot.load(Ordering::Relaxed), 42);
+                    consumer_tail.store(tail_value.wrapping_add(1), Ordering::Release);
                 }
             });
 
