@@ -78,6 +78,7 @@ The first microphone milestone accepts only the default F32 input format, keeps 
 | Linux PipeWire microphone | F32 input is received; clean stream stop | Not run |
 | Linux ALSA microphone | F32 input is received; clean stream stop | Not run |
 | Windows WASAPI microphone | F32 input is received; clean stream stop | Not run |
+| Windows 11 native title bar | Framelet dark caption, light title text, native system buttons and resize behavior | Not run |
 | Microphone permission denied | Useful error; no continuing stream | Not run |
 | Microphone device unplugged | Stream error observed; clean stop, no panic/leak | Not run |
 | Ring-buffer overrun | Drop count increases; callback does not block or panic | Not run |

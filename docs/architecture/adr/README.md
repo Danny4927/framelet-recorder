@@ -19,5 +19,6 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0013](ADR-0013-media-pipeline-evaluation.md) | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
 | [ADR-0014](ADR-0014-transactional-filesystem-storage.md) | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |
 | [ADR-0015](ADR-0015-media-backend-evaluation-decision.md) | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only |
+| [ADR-0016](ADR-0016-native-windows-title-bar.md) | Native dark Windows title bar | Accepted for the Windows desktop shell |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.
