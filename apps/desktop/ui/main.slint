@@ -9,7 +9,6 @@ export component MainWindow inherits Window {
     in-out property <string> status-message: "Aufnahme noch nicht verfügbar";
     in-out property <string> output-directory: "";
     in-out property <string> recovery-message: "Noch nicht geprüft";
-    callback choose-output-directory();
     callback scan-recovery();
 
     VerticalLayout {
@@ -97,7 +96,7 @@ export component MainWindow inherits Window {
                 HorizontalLayout {
                     spacing: 8px;
                     Text { text: root.output-directory; color: #e1e7f0; vertical-alignment: center; overflow: elide; }
-                    Button { text: "Ändern"; clicked => { root.choose-output-directory(); } }
+                    Text { text: "Ordnerauswahl folgt"; color: #8491a5; vertical-alignment: center; }
                 }
                 HorizontalLayout {
                     spacing: 8px;
