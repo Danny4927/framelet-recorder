@@ -74,6 +74,12 @@ impl WavWriter {
         Ok(writer)
     }
 
+    /// Returns whether the file has exceeded the supported RIFF size limit.
+    #[must_use]
+    pub fn remaining_capacity_bytes(&self) -> u64 {
+        MAX_DATA_BYTES.saturating_sub(self.data_bytes)
+    }
+
     /// Appends one block, validating its negotiated format.
     pub fn write_block(&mut self, block: &AudioBlock) -> Result<(), WavWriterError> {
         if block.sample_rate != self.sample_rate || block.channels != self.channels {
