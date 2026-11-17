@@ -200,7 +200,8 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
 
 fn synthetic_frame(length: usize, sequence: u32) -> Vec<u8> {
     let mut data = vec![0; length];
-    for pixel in data.chunks_exact_mut(4) {
+    let (pixels, _remainder) = data.as_chunks_mut::<4>();
+    for pixel in pixels {
         pixel[0] = (sequence % 255) as u8;
         pixel[1] = 80;
         pixel[2] = 180;
@@ -210,7 +211,7 @@ fn synthetic_frame(length: usize, sequence: u32) -> Vec<u8> {
 }
 
 fn f32le_bytes(samples: &[f32]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(samples.len() * std::mem::size_of::<f32>());
+    let mut bytes = Vec::with_capacity(std::mem::size_of_val(samples));
     for sample in samples {
         bytes.extend_from_slice(&sample.to_le_bytes());
     }
