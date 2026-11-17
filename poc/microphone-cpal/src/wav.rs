@@ -4,6 +4,8 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use framelet_capture_api::AudioBlock;
 
 const MAX_DATA_BYTES: u64 = u32::MAX as u64 - 36;
@@ -42,7 +44,9 @@ impl std::error::Error for WavWriterError {
 }
 
 impl From<io::Error> for WavWriterError {
-    fn from(error: io::Error) -> Self { Self::Io(error) }
+    fn from(error: io::Error) -> Self {
+        Self::Io(error)
+    }
 }
 
 /// Writes interleaved IEEE-float samples to a 32-bit float WAV file.
@@ -56,15 +60,29 @@ pub struct WavWriter {
 
 impl WavWriter {
     /// Creates a file exclusively. Existing files are never overwritten.
-    pub fn create(path: impl AsRef<Path>, sample_rate: u32, channels: u16) -> Result<Self, WavWriterError> {
+    pub fn create(
+        path: impl AsRef<Path>,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Result<Self, WavWriterError> {
         if sample_rate == 0 || channels == 0 {
-            return Err(WavWriterError::UnsupportedFormat("sample rate and channels must be non-zero"));
+            return Err(WavWriterError::UnsupportedFormat(
+                "sample rate and channels must be non-zero",
+            ));
         }
-        let align = channels.checked_mul(4).ok_or(WavWriterError::UnsupportedFormat("block alignment overflow"))?;
-        let byte_rate = sample_rate.checked_mul(u32::from(align)).ok_or(WavWriterError::UnsupportedFormat("byte rate overflow"))?;
+        let align = channels
+            .checked_mul(4)
+            .ok_or(WavWriterError::UnsupportedFormat("block alignment overflow"))?;
+        let byte_rate = sample_rate
+            .checked_mul(u32::from(align))
+            .ok_or(WavWriterError::UnsupportedFormat("byte rate overflow"))?;
         let path = path.as_ref().to_path_buf();
         let mut writer = Self {
-            file: OpenOptions::new().read(true).write(true).create_new(true).open(&path)?,
+            file: OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create_new(true)
+                .open(&path)?,
             path,
             sample_rate,
             channels,
@@ -74,7 +92,7 @@ impl WavWriter {
         Ok(writer)
     }
 
-    /// Returns whether the file has exceeded the supported RIFF size limit.
+    /// Returns the number of payload bytes still available in a RIFF file.
     #[must_use]
     pub fn remaining_capacity_bytes(&self) -> u64 {
         MAX_DATA_BYTES.saturating_sub(self.data_bytes)
@@ -83,12 +101,19 @@ impl WavWriter {
     /// Appends one block, validating its negotiated format.
     pub fn write_block(&mut self, block: &AudioBlock) -> Result<(), WavWriterError> {
         if block.sample_rate != self.sample_rate || block.channels != self.channels {
-            return Err(WavWriterError::MismatchedBlock("sample rate or channel count changed"));
+            return Err(WavWriterError::MismatchedBlock(
+                "sample rate or channel count changed",
+            ));
         }
-        let bytes = u64::try_from(block.samples.len()).ok()
-            .and_then(|count| count.checked_mul(4)).ok_or(WavWriterError::FileTooLarge)?;
-        let new_size = self.data_bytes.checked_add(bytes)
-            .filter(|size| *size <= MAX_DATA_BYTES).ok_or(WavWriterError::FileTooLarge)?;
+        let bytes = u64::try_from(block.samples.len())
+            .ok()
+            .and_then(|count| count.checked_mul(4))
+            .ok_or(WavWriterError::FileTooLarge)?;
+        let new_size = self
+            .data_bytes
+            .checked_add(bytes)
+            .filter(|size| *size <= MAX_DATA_BYTES)
+            .ok_or(WavWriterError::FileTooLarge)?;
         for sample in &block.samples {
             self.file.write_all(&sample.to_le_bytes())?;
         }
@@ -98,8 +123,10 @@ impl WavWriter {
 
     /// Patches chunk sizes, flushes and syncs, then returns the completed path.
     pub fn finalize(mut self) -> Result<PathBuf, WavWriterError> {
-        let riff_size = u32::try_from(36 + self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
-        let data_size = u32::try_from(self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
+        let riff_size =
+            u32::try_from(36 + self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
+        let data_size =
+            u32::try_from(self.data_bytes).map_err(|_| WavWriterError::FileTooLarge)?;
         self.file.seek(SeekFrom::Start(4))?;
         self.file.write_all(&riff_size.to_le_bytes())?;
         self.file.seek(SeekFrom::Start(40))?;
@@ -132,27 +159,41 @@ mod tests {
     use std::time::Duration;
 
     fn path(label: &str) -> PathBuf {
-        let id = SystemTime::now().duration_since(UNIX_EPOCH).map(|v| v.as_nanos()).unwrap_or_default();
+        let id = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or_default();
         std::env::temp_dir().join(format!("framelet-{label}-{}-{id}.wav", std::process::id()))
     }
-    use std::time::{SystemTime, UNIX_EPOCH};
 
     fn block(rate: u32, channels: u16, samples: Vec<f32>) -> AudioBlock {
-        AudioBlock::new(rate, channels, Duration::ZERO, Some(0), samples).expect("valid test block")
+        AudioBlock::new(rate, channels, Duration::ZERO, Some(0), samples)
+            .expect("valid test block")
     }
 
     #[test]
     fn writes_float_wav_and_patches_sizes() {
         let output = path("valid");
         let mut writer = WavWriter::create(&output, 48_000, 2).expect("create");
-        writer.write_block(&block(48_000, 2, vec![0.25, -0.5])).expect("append");
+        writer
+            .write_block(&block(48_000, 2, vec![0.25, -0.5]))
+            .expect("append");
         writer.finalize().expect("finalize");
         let bytes = std::fs::read(&output).expect("read");
         assert_eq!(&bytes[0..4], b"RIFF");
-        assert_eq!(u32::from_le_bytes(bytes[4..8].try_into().expect("riff size")), 44);
+        assert_eq!(
+            u32::from_le_bytes(bytes[4..8].try_into().expect("riff size")),
+            44
+        );
         assert_eq!(&bytes[8..12], b"WAVE");
-        assert_eq!(u16::from_le_bytes(bytes[20..22].try_into().expect("format")), 3);
-        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().expect("data size")), 8);
+        assert_eq!(
+            u16::from_le_bytes(bytes[20..22].try_into().expect("format")),
+            3
+        );
+        assert_eq!(
+            u32::from_le_bytes(bytes[40..44].try_into().expect("data size")),
+            8
+        );
         assert_eq!(&bytes[44..48], &0.25_f32.to_le_bytes());
         assert_eq!(&bytes[48..52], &(-0.5_f32).to_le_bytes());
         std::fs::remove_file(output).expect("cleanup");
@@ -163,7 +204,9 @@ mod tests {
         let output = path("existing");
         std::fs::write(&output, b"keep").expect("seed");
         let result = WavWriter::create(&output, 48_000, 1);
-        assert!(matches!(result, Err(WavWriterError::Io(ref e)) if e.kind() == io::ErrorKind::AlreadyExists));
+        assert!(
+            matches!(result, Err(WavWriterError::Io(ref error)) if error.kind() == io::ErrorKind::AlreadyExists)
+        );
         assert_eq!(std::fs::read(&output).expect("read seed"), b"keep");
         std::fs::remove_file(output).expect("cleanup");
     }
@@ -172,7 +215,10 @@ mod tests {
     fn rejects_a_changed_input_format() {
         let output = path("format");
         let mut writer = WavWriter::create(&output, 48_000, 1).expect("create");
-        assert!(matches!(writer.write_block(&block(44_100, 1, vec![0.0])), Err(WavWriterError::MismatchedBlock(_))));
+        assert!(matches!(
+            writer.write_block(&block(44_100, 1, vec![0.0])),
+            Err(WavWriterError::MismatchedBlock(_))
+        ));
         drop(writer);
         std::fs::remove_file(output).expect("cleanup");
     }
