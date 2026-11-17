@@ -112,6 +112,17 @@ impl<T> MediaProducer<T> {
 }
 
 impl<T> MediaConsumer<T> {
+    /// Blocks only the pipeline worker, never a producer or device callback.
+    pub fn pop(&self) -> Option<T> {
+        match self.receiver.recv() {
+            Ok(item) => {
+                self.metrics.queued.fetch_sub(1, Ordering::AcqRel);
+                Some(item)
+            }
+            Err(_) => None,
+        }
+    }
+
     pub fn try_pop(&self) -> Option<T> {
         match self.receiver.try_recv() {
             Ok(item) => {
