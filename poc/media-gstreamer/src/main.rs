@@ -26,7 +26,9 @@ fn main() -> Result<()> {
     let output = output_path()?;
     let pipeline = build_pipeline(&output)?;
 
-    pipeline.set_state(gst::State::Playing).context("starting GStreamer pipeline")?;
+    pipeline
+        .set_state(gst::State::Playing)
+        .context("starting GStreamer pipeline")?;
     let result = push_test_media(&pipeline).and_then(|()| finish_pipeline(&pipeline));
 
     if result.is_err() {
@@ -44,7 +46,9 @@ fn output_path() -> Result<PathBuf> {
     let path = match (arguments.next(), arguments.next()) {
         (None, None) => std::env::current_dir()?.join("framelet-gstreamer-poc.mkv"),
         (Some(flag), Some(value)) if flag == "--output" => PathBuf::from(value),
-        _ => bail!("usage: cargo run --manifest-path poc/media-gstreamer/Cargo.toml -- [--output PATH]"),
+        _ => bail!(
+            "usage: cargo run --manifest-path poc/media-gstreamer/Cargo.toml -- [--output PATH]"
+        ),
     };
     if path.exists() {
         bail!("refusing to overwrite existing output: {}", path.display());
@@ -98,50 +102,72 @@ fn build_pipeline(output: &PathBuf) -> Result<gst::Pipeline> {
     sink.set_property("sync", false);
 
     pipeline.add_many([
-        video_source.upcast_ref(), &video_queue, &video_convert, &video_encoder,
-        audio_source.upcast_ref(), &audio_queue, &audio_convert, &audio_resample,
-        &audio_encoder, &muxer, &sink,
+        video_source.upcast_ref(),
+        &video_queue,
+        &video_convert,
+        &video_encoder,
+        audio_source.upcast_ref(),
+        &audio_queue,
+        &audio_convert,
+        &audio_resample,
+        &audio_encoder,
+        &muxer,
+        &sink,
     ])?;
 
     gst::Element::link_many([
-        video_source.upcast_ref(), &video_queue, &video_convert, &video_encoder, &muxer,
-    ]).context("linking video branch")?;
+        video_source.upcast_ref(),
+        &video_queue,
+        &video_convert,
+        &video_encoder,
+        &muxer,
+    ])
+    .context("linking video branch")?;
 
     gst::Element::link_many([
-        audio_source.upcast_ref(), &audio_queue, &audio_convert, &audio_resample,
-        &audio_encoder, &muxer,
-    ]).context("linking audio branch")?;
+        audio_source.upcast_ref(),
+        &audio_queue,
+        &audio_convert,
+        &audio_resample,
+        &audio_encoder,
+        &muxer,
+    ])
+    .context("linking audio branch")?;
 
     muxer.link(&sink).context("linking Matroska sink")?;
     Ok(pipeline)
 }
 
 fn make_element(factory: &str, name: &str) -> Result<gst::Element> {
-    gst::ElementFactory::make(factory).name(name).build()
+    gst::ElementFactory::make(factory)
+        .name(name)
+        .build()
         .with_context(|| format!("creating GStreamer element {factory}"))
 }
 
 fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
-    let video_source = pipeline.by_name("framelet-video-source")
+    let video_source = pipeline
+        .by_name("framelet-video-source")
         .context("video appsrc missing")?
         .downcast::<gst_app::AppSrc>()
         .map_err(|_| anyhow::anyhow!("video source has unexpected type"))?;
 
-    let audio_source = pipeline.by_name("framelet-audio-source")
+    let audio_source = pipeline
+        .by_name("framelet-audio-source")
         .context("audio appsrc missing")?
         .downcast::<gst_app::AppSrc>()
         .map_err(|_| anyhow::anyhow!("audio source has unexpected type"))?;
 
     let frame_duration = gst::ClockTime::from_nseconds(1_000_000_000 / u64::from(FRAME_RATE));
-    let frame_bytes = usize::try_from(WIDTH).ok()
+    let frame_bytes = usize::try_from(WIDTH)
+        .ok()
         .and_then(|width| width.checked_mul(usize::try_from(HEIGHT).ok()?))
         .and_then(|pixels| pixels.checked_mul(4))
         .context("video frame size overflow")?;
 
     for sequence in 0..FRAME_RATE * 5 {
-        let timestamp = Duration::from_nanos(
-            u64::from(sequence) * (1_000_000_000 / u64::from(FRAME_RATE)),
-        );
+        let timestamp =
+            Duration::from_nanos(u64::from(sequence) * (1_000_000_000 / u64::from(FRAME_RATE)));
         let frame = VideoFrame::new(
             VideoFrameMetadata {
                 width: WIDTH,
@@ -152,7 +178,8 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                 sequence: u64::from(sequence),
             },
             synthetic_frame(frame_bytes, sequence),
-        ).map_err(|error| anyhow::anyhow!("creating owned test video frame: {error:?}"))?;
+        )
+        .map_err(|error| anyhow::anyhow!("creating owned test video frame: {error:?}"))?;
 
         let mut buffer = gst::Buffer::from_mut_slice(frame.data);
         {
@@ -161,7 +188,9 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
             buffer_ref.set_duration(frame_duration);
             buffer_ref.set_offset(u64::from(sequence));
         }
-        video_source.push_buffer(buffer).context("pushing video frame")?;
+        video_source
+            .push_buffer(buffer)
+            .context("pushing video frame")?;
 
         if sequence % 3 == 0 {
             let samples_per_channel = (SAMPLE_RATE / FRAME_RATE) * 3;
@@ -169,7 +198,8 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                 usize::try_from(samples_per_channel).unwrap_or_default() * usize::from(CHANNELS),
             );
             for sample in 0..samples_per_channel {
-                let t = (sequence * (SAMPLE_RATE / FRAME_RATE) + sample) as f32 / SAMPLE_RATE as f32;
+                let t =
+                    (sequence * (SAMPLE_RATE / FRAME_RATE) + sample) as f32 / SAMPLE_RATE as f32;
                 let value = (t * 440.0 * std::f32::consts::TAU).sin() * 0.1;
                 samples.extend([value, value]);
             }
@@ -179,7 +209,8 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                 timestamp,
                 Some(u64::from(sequence / 3) * u64::from(samples_per_channel)),
                 samples,
-            ).map_err(|error| anyhow::anyhow!("creating owned test audio block: {error:?}"))?;
+            )
+            .map_err(|error| anyhow::anyhow!("creating owned test audio block: {error:?}"))?;
 
             let mut audio_buffer = gst::Buffer::from_mut_slice(f32le_bytes(&block.samples));
             {
@@ -189,12 +220,18 @@ fn push_test_media(pipeline: &gst::Pipeline) -> Result<()> {
                     u64::from(samples_per_channel) * 1_000_000_000 / u64::from(SAMPLE_RATE),
                 ));
             }
-            audio_source.push_buffer(audio_buffer).context("pushing audio block")?;
+            audio_source
+                .push_buffer(audio_buffer)
+                .context("pushing audio block")?;
         }
     }
 
-    video_source.end_of_stream().context("ending video stream")?;
-    audio_source.end_of_stream().context("ending audio stream")?;
+    video_source
+        .end_of_stream()
+        .context("ending video stream")?;
+    audio_source
+        .end_of_stream()
+        .context("ending audio stream")?;
     Ok(())
 }
 
@@ -220,18 +257,24 @@ fn f32le_bytes(samples: &[f32]) -> Vec<u8> {
 
 fn finish_pipeline(pipeline: &gst::Pipeline) -> Result<()> {
     let bus = pipeline.bus().context("pipeline bus missing")?;
-    let message = bus.timed_pop_filtered(
-        gst::ClockTime::from_seconds(30),
-        &[gst::MessageType::Eos, gst::MessageType::Error],
-    ).context("timed out waiting for media finalization")?;
+    let message = bus
+        .timed_pop_filtered(
+            gst::ClockTime::from_seconds(30),
+            &[gst::MessageType::Eos, gst::MessageType::Error],
+        )
+        .context("timed out waiting for media finalization")?;
 
     match message.view() {
         gst::MessageView::Eos(..) => {
-            pipeline.set_state(gst::State::Null).context("stopping finalized pipeline")?;
+            pipeline
+                .set_state(gst::State::Null)
+                .context("stopping finalized pipeline")?;
             Ok(())
         }
         gst::MessageView::Error(error) => bail!(
-            "GStreamer pipeline failed: {} ({:?})", error.error(), error.debug()
+            "GStreamer pipeline failed: {} ({:?})",
+            error.error(),
+            error.debug()
         ),
         _ => bail!("unexpected GStreamer terminal message"),
     }
