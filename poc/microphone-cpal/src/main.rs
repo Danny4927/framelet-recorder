@@ -114,7 +114,7 @@ fn record_device(device: &cpal::Device, duration: Duration, output: PathBuf) -> 
     let callback_failed = Arc::new(AtomicBool::new(false));
     let callback_error = Arc::clone(&callback_failed);
     let config: StreamConfig = supported.into();
-    let stream = build_f32_stream(device, config, Arc::clone(&ring), move |_error: cpal::StreamError| {
+    let stream = build_f32_stream(device, config, Arc::clone(&ring), move |_error: cpal::Error| {
         callback_error.store(true, Ordering::Release);
     })?;
     let mut writer = WavWriter::create(&output, sample_rate, channels)?;
