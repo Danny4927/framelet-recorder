@@ -76,6 +76,8 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
+      - name: Resolve workspace dependencies and refresh lockfile
+        run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
   dependency-audit:
