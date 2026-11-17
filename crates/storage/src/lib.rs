@@ -238,6 +238,78 @@ mod tests {
     }
 
     #[test]
+    fn begin_retries_colliding_temporary_names_without_overwriting() {
+        let directory = temp_dir("begin-collision");
+        let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
+        let first = storage
+            .begin(RecordingId::new(12), &configuration())
+            .expect("first begin");
+        let first_candidate = storage
+            .temporary_path(&first)
+            .expect("first candidate")
+            .to_path_buf();
+
+        // A stale candidate from a prior process may occupy the next deterministic
+        // name. The adapter must reserve a fresh name rather than truncate it.
+        let second_collision = directory.join(".framelet-pending-recording-12-2.part");
+        fs::write(&second_collision, b"orphan").expect("seed collision");
+        let second = storage
+            .begin(RecordingId::new(12), &configuration())
+            .expect("retry begin");
+        let second_candidate = storage
+            .temporary_path(&second)
+            .expect("second candidate")
+            .to_path_buf();
+
+        assert_ne!(first_candidate, second_candidate);
+        assert_ne!(second_candidate, second_collision);
+        assert_eq!(fs::read(&second_collision).expect("read orphan"), b"orphan");
+        storage.abort(&first).expect("abort first");
+        storage.abort(&second).expect("abort second");
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn publication_collision_never_replaces_existing_recording() {
+        let directory = temp_dir("publish-collision");
+        let existing = directory.join("recording-13-1.framelet");
+        fs::write(&existing, b"keep me").expect("seed existing file");
+        let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
+        let session = storage
+            .begin(RecordingId::new(13), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
+        fs::write(&candidate, b"new media").expect("write candidate");
+
+        assert!(storage.publish(&session).is_err());
+        assert_eq!(fs::read(&existing).expect("read existing"), b"keep me");
+        assert_eq!(fs::read(&candidate).expect("candidate retained"), b"new media");
+        storage.abort(&session).expect("abort");
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
+    fn abort_is_idempotent_when_candidate_was_already_removed() {
+        let directory = temp_dir("abort-missing");
+        let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
+        let session = storage
+            .begin(RecordingId::new(14), &configuration())
+            .expect("begin");
+        let candidate = storage
+            .temporary_path(&session)
+            .expect("candidate")
+            .to_path_buf();
+        fs::remove_file(candidate).expect("remove candidate");
+
+        storage.abort(&session).expect("abort missing candidate");
+        assert!(storage.abort(&session).is_err());
+        fs::remove_dir_all(directory).expect("cleanup");
+    }
+
+    #[test]
     fn abort_removes_only_candidate_and_preserves_existing_recording() {
         let directory = temp_dir("abort");
         let existing = directory.join("recording-9-1.framelet");
