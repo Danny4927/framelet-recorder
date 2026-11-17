@@ -31,6 +31,7 @@ Stakeholders: end users (predictable private recordings), maintainers (auditable
 - Local files only; offline recording; OS-mediated permissions; never bypass compositor/portal controls.
 - Rust Edition 2024. Every first-party crate must use #![forbid(unsafe_code)]. No raw pointers, custom FFI, unsafe trait implementations, or lint exceptions.
 - **Binding architecture:** hexagonal architecture (ports and adapters) applies to the whole application. Core owns use cases, domain/application types, and ports. Concrete adapters depend inward on those contracts. The desktop executable is the only composition root. No production feature may bypass this boundary.
+- **Binding domain model:** apply DDD inside the core. Maintain a ubiquitous language; encode business invariants in domain entities/value objects/aggregates where justified; keep the domain independent of infrastructure; document bounded contexts and relationships when multiple models emerge. DDD is not permission to add ceremonial patterns or speculative abstractions.
 - **Binding documentation:** this file is the arc42 architecture document and must retain all 12 numbered sections (1–12). Structural changes update the relevant sections in the same PR; significant decisions receive an ADR. The implementation roadmap is maintained separately and linked from this document.
 - Third-party dependencies may contain unsafe internals, but require review of unsafe/FFI boundaries, advisories, license, maintenance, transitive dependencies, native libraries, and platform parity.
 - UI thread is non-blocking; audio callbacks are real-time safe; queues are bounded.
@@ -64,6 +65,8 @@ External interfaces:
 No telemetry, update checks, upload, remote control, or cloud processing is in scope.
 
 ## 4. Solution Strategy
+
+Domain-Driven Design complements the hexagonal architecture: the domain model and its invariants belong to the core; application use cases coordinate domain behavior and ports; adapters translate external concerns. The initial domain is the single Recording bounded context. Maintain a ubiquitous language and introduce additional contexts only when distinct models and ownership boundaries justify them.
 
 1. Modular monolith: one desktop process and Rust workspace; no daemon or distributed architecture.
 2. Hexagonal architecture: all inbound and outbound interactions cross application-owned ports; concrete adapters depend inward on core-owned contracts. This is mandatory for every production feature, not only OS capture.
@@ -135,7 +138,33 @@ Inbound actor -> Inbound adapter -> Inbound port -> Application core
 
 See ADR-0010. This rule is a release/PR acceptance criterion, not an aspirational target.
 
-### 5.4 Current state versus target
+### 5.4 Domain model and DDD boundaries (binding)
+
+DDD is the required modeling approach for Framelet's application domain. It works together with the hexagonal boundary: the domain model is inside the core; inbound and outbound adapters translate external concerns without owning business rules.
+
+**Initial ubiquitous language** (to be refined as behavior is implemented):
+
+| Term | Meaning / invariant |
+|---|---|
+| Recording | A user-initiated local capture session that produces one finalized recording artifact |
+| Recording session | The lifecycle instance for prepare, start, pause, resume, stop, cancel, and finalize; state transitions are owned by the core |
+| Capture source | A user-selected screen/window, camera, or microphone with explicit identity and capabilities |
+| Media stream | Timestamped audio or video blocks belonging to a recording session and source |
+| Recording mode | One of the explicitly supported combinations: screen, microphone-only, webcam, or screen + webcam; optional microphone where specified |
+| Output artifact | A locally stored recording that is not considered successful until finalization and publication complete |
+
+**Modeling rules:**
+- Put domain concepts and invariants in `crates/core` (or a clearly separated domain module within the core); keep `capture-api` focused on transport/interoperability contracts rather than becoming a second domain model.
+- Use entities for identity-bearing lifecycle concepts, value objects for validated immutable concepts (for example source identity, recording configuration, media time, and output destination), and aggregates only where a consistency boundary and invariants require them.
+- The recording session is the initial aggregate candidate: its root owns legal lifecycle transitions and invariants such as idempotent stop/cancel semantics and finalization outcome. Confirm or revise this boundary during Phase 1 based on concrete use cases; do not force all devices/media buffers into this aggregate.
+- Application use cases coordinate domain objects and ports. Adapters own device/codec/filesystem mechanics and map native/persisted types to application-owned contracts.
+- Domain events represent meaningful facts (for example recording started, source lost, audio gap detected, recording finalized); transport notifications are not automatically domain events.
+- Do not introduce repositories, domain services, specifications, factories, or event buses unless a concrete invariant or use case needs them. Persistence abstractions belong at the application port boundary.
+- Keep one ubiquitous language across code, tests, UI translations, ADRs, and arc42. Record changes to key terms and bounded-context boundaries here.
+
+The initial MVP is one bounded context: **Recording**. Split additional bounded contexts only when independent models, invariants, or ownership justify it; do not pre-emptively create microservices or separate deployables.
+
+### 5.5 Current state versus target
 
 | Area | Status |
 |---|---|
@@ -258,6 +287,7 @@ See [ADR index](adr/README.md).
 | ADR-0008 | Evaluate CPAL for microphone capture | Evaluation only |
 | ADR-0009 | Bounded worker-level audio block transport | Accepted for backend-neutral API |
 | ADR-0010 | Make hexagonal architecture and arc42 compliance binding | Accepted |
+| ADR-0011 | Make Domain-Driven Design binding for the application domain | Accepted |
 
 ## 10. Quality Requirements
 
@@ -296,6 +326,12 @@ Implementation sequencing and phase exit criteria are defined in [Implementation
 | Term | Meaning |
 |---|---|
 | Adapter | Platform/library-specific implementation of an application-owned port |
+| Aggregate | Cluster of domain objects whose invariants are enforced through one root |
+| Bounded context | Explicit boundary within which a domain model and its language are consistent |
+| Domain event | A fact of domain significance that has occurred |
+| Entity | Domain object defined by identity and lifecycle |
+| Ubiquitous language | Shared, precise vocabulary used by domain experts and the delivery team |
+| Value object | Immutable domain concept defined by its values |
 | Backpressure | Preventing a fast producer from overwhelming a slower consumer |
 | Capture source | User-selected display, window, camera, or microphone |
 | Core | Application layer owning use cases and recording lifecycle |
