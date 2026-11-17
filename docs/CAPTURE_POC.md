@@ -61,7 +61,7 @@ cargo run --manifest-path poc/microphone-cpal/Cargo.toml -- --list
 cargo run --manifest-path poc/microphone-cpal/Cargo.toml -- --record --device 0 --duration-seconds 10
 ```
 
-The device index is local to the current enumeration and is not a persistent device identifier. Linux currently enables CPAL's PipeWire and ALSA features; Windows WASAPI and both Linux backend paths still need real-device validation.
+The device index is local to the current enumeration and is not a persistent device identifier. Linux explicitly enables CPAL's PipeWire feature; ALSA is compiled as a target-specific backend dependency. Windows WASAPI and Linux PipeWire/ALSA paths still need real-device validation.
 
 ## Dependency and safety boundary
 
