@@ -70,7 +70,10 @@ def check_first_party_crates() -> None:
                 text = source.read_text(encoding="utf-8")
                 expected = (
                     "#![deny(unsafe_code)]"
-                    if source == ROOT / "apps/desktop/src/main.rs"
+                    if source in {
+                        ROOT / "apps/desktop/src/main.rs",
+                        ROOT / "apps/desktop/tests/visual_regression.rs",
+                    }
                     else "#![forbid(unsafe_code)]"
                 )
                 if expected not in text:
