@@ -27,9 +27,11 @@ def crate_roots_for(manifest_path: Path) -> list[Path]:
     targets: set[Path] = set()
 
     # Cargo build scripts are independent Rust compilation units.
-    build_script = package_dir / package.get("build", "build.rs")
-    if package.get("build") is not False and build_script.is_file():
-        targets.add(build_script)
+    build_setting = package.get("build", "build.rs")
+    if build_setting is not False:
+        build_script = package_dir / build_setting
+        if build_script.is_file():
+            targets.add(build_script)
 
     lib = package.get("lib")
     if lib:
