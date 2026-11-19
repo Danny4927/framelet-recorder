@@ -68,11 +68,18 @@ def check_first_party_crates() -> None:
                 continue
             for source in crate_roots:
                 text = source.read_text(encoding="utf-8")
-                if "#![forbid(unsafe_code)]" not in text:
+                expected = (
+                    "#![deny(unsafe_code)]"
+                    if source == ROOT / "apps/desktop/src/main.rs"
+                    else "#![forbid(unsafe_code)]"
+                )
+                if expected not in text:
                     fail(
                         f"{source.relative_to(ROOT)} must declare "
-                        "#![forbid(unsafe_code)] at crate root"
+                        f"{expected} at crate root"
                     )
+                if "#![allow(unsafe_code)]" in text or "#[allow(unsafe_code)]" in text:
+                    fail(f"{source.relative_to(ROOT)} must not allow unsafe Rust")
                 checked_roots += 1
             checked_manifests += 1
     print(
