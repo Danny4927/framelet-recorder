@@ -8,7 +8,7 @@ and the checks that deliberately remain informational.
 
 | Area | Check | Enforcement |
 |---|---|---|
-| Rust safety | Workspace lint `unsafe_code = "forbid"` and crate-root `#![forbid(unsafe_code)]` in every first-party crate | Blocking |
+| Rust safety | Workspace lint `unsafe_code = "deny"` and crate-root safety declarations in every first-party crate; the Slint entry point uses `deny` so generated macro code can locally allow its internals | Blocking |
 | Architecture | Core dependency allowlist and forbidden adapter/runtime references | Blocking |
 | Documentation | All 12 arc42 sections and repository-local Markdown links | Blocking |
 | Style | `cargo fmt --all -- --check` | Blocking |
@@ -34,7 +34,7 @@ or compositor compatibility on end-user hardware.
 ## Architecture enforcement scope
 
 The architecture guard verifies:
-- each first-party Rust crate source root explicitly forbids unsafe Rust;
+- each first-party Rust crate source root denies unsafe Rust; all roots except the Slint macro entry point use `forbid`;
 - the core crate has only the approved direct dependency on `framelet-capture-api`;
 - core source does not reference known UI, capture, media-runtime or OS adapter APIs.
 
