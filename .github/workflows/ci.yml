@@ -19,8 +19,13 @@ jobs:
           components: rustfmt, clippy
       - name: Install Slint, PipeWire and ALSA build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+          packages="libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good"
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install --yes -o Acquire::Retries=3 $packages || {
+            echo "Package mirror returned a stale index; refreshing and retrying once."
+            sudo apt-get update -o Acquire::Retries=3
+            sudo apt-get install --yes -o Acquire::Retries=3 $packages
+          }
       - uses: Swatinem/rust-cache@v2
       - name: Enforce Rust safety and hexagonal architecture
         run: python scripts/check-architecture.py
@@ -118,8 +123,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install native coverage build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
+          packages="libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good"
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install --yes -o Acquire::Retries=3 $packages || {
+            echo "Package mirror returned a stale index; refreshing and retrying once."
+            sudo apt-get update -o Acquire::Retries=3
+            sudo apt-get install --yes -o Acquire::Retries=3 $packages
+          }
       - name: Install LLVM coverage tools
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Generate workspace coverage report
