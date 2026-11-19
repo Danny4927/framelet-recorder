@@ -86,6 +86,7 @@ jobs:
           fi
 
           branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
+          git checkout -- Cargo.lock
           git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch"
           git checkout -B "$branch" "origin/$branch"
           git apply --3way "$RUNNER_TEMP/cargo-lock.patch"
