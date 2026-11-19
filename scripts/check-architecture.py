@@ -20,38 +20,48 @@ def fail(message: str) -> None:
     raise SystemExit(1)
 
 
-def crate_root_for(manifest_path: Path) -> list[Path]:
+def crate_roots_for(manifest_path: Path) -> list[Path]:
+    """Return conventional and explicitly configured Rust compilation roots."""
     package = tomllib.loads(manifest_path.read_text(encoding="utf-8")).get("package", {})
-    targets = []
+    package_dir = manifest_path.parent
+    targets: set[Path] = set()
+
+    # Cargo build scripts are independent Rust compilation units.
+    build_script = package_dir / package.get("build", "build.rs")
+    if package.get("build") is not False and build_script.is_file():
+        targets.add(build_script)
+
     lib = package.get("lib")
     if lib:
-        targets.append(manifest_path.parent / lib.get("path", "src/lib.rs"))
+        targets.add(package_dir / lib.get("path", "src/lib.rs"))
     else:
-        default_lib = manifest_path.parent / "src/lib.rs"
-        if default_lib.exists():
-            targets.append(default_lib)
+        targets.add(package_dir / "src/lib.rs")
 
-    for binary in package.get("bin", []):
-        targets.append(manifest_path.parent / binary.get("path", "src/main.rs"))
-    if not package.get("bin"):
-        default_main = manifest_path.parent / "src/main.rs"
-        if default_main.exists():
-            targets.append(default_main)
+    # Cargo's automatic targets remain enabled alongside explicit targets.
+    targets.add(package_dir / "src/main.rs")
+    targets.update((package_dir / "src/bin").rglob("*.rs"))
 
-    for target in ("examples", "benches", "tests"):
-        targets.extend((manifest_path.parent / target).glob("*.rs"))
-    return [path for path in targets if path.exists()]
+    for target_name in ("bin", "example", "test", "bench"):
+        for target in package.get(target_name, []):
+            if "path" in target:
+                targets.add(package_dir / target["path"])
+
+    for directory in ("tests", "examples", "benches"):
+        targets.update((package_dir / directory).rglob("*.rs"))
+
+    return sorted(path for path in targets if path.is_file())
 
 
 def check_first_party_crates() -> None:
-    checked = 0
+    checked_manifests = 0
+    checked_roots = 0
     for root in FIRST_PARTY_CRATES:
         if not root.exists():
             continue
         for manifest_path in root.rglob("Cargo.toml"):
             if "target" in manifest_path.parts:
                 continue
-            crate_roots = crate_root_for(manifest_path)
+            crate_roots = crate_roots_for(manifest_path)
             if not crate_roots:
                 continue
             for source in crate_roots:
@@ -61,20 +71,29 @@ def check_first_party_crates() -> None:
                         f"{source.relative_to(ROOT)} must declare "
                         "#![forbid(unsafe_code)] at crate root"
                     )
-            checked += 1
-    print(f"First-party Rust crate safety declarations verified ({checked} manifests).")
+                checked_roots += 1
+            checked_manifests += 1
+    print(
+        "First-party Rust safety declarations verified "
+        f"({checked_roots} compilation roots in {checked_manifests} manifests)."
+    )
+
+
+def dependency_names(manifest: dict) -> set[str]:
+    """Collect direct dependencies, including target-specific dependency tables."""
+    names: set[str] = set()
+    for section in ("dependencies", "dev-dependencies", "build-dependencies"):
+        names.update(manifest.get(section, {}))
+    for target in manifest.get("target", {}).values():
+        if isinstance(target, dict):
+            names.update(dependency_names(target))
+    return names
 
 
 def check_core_boundary() -> None:
     manifest_path = ROOT / "crates/core/Cargo.toml"
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-    dependency_sections = (
-        manifest.get("dependencies", {}),
-        manifest.get("build-dependencies", {}),
-        manifest.get("dev-dependencies", {}),
-    )
-    dependencies = set().union(*(set(section) for section in dependency_sections))
-    unexpected = dependencies - {"framelet-capture-api"}
+    unexpected = dependency_names(manifest) - {"framelet-capture-api"}
     if unexpected:
         fail(f"framelet-core has forbidden direct dependencies: {sorted(unexpected)}")
 
