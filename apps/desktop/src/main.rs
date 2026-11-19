@@ -1,4 +1,4 @@
-#![deny(unsafe_code)]
+#![forbid(unsafe_code)]
 #![allow(missing_docs)]
 
 slint::include_modules!();
