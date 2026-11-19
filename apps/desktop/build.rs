@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Build script that compiles the Framelet Slint user interface.
 
 fn main() {
