@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! Outbound ports owned by the Recording application core.
 //!
 //! Implementations are adapters. All methods are invoked by application workers,
