@@ -12,8 +12,6 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -35,13 +33,7 @@ jobs:
         run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
       - name: Resolve workspace dependencies
-        run: cargo check --workspace
-      - name: Upload regenerated workspace lockfile
-        uses: actions/upload-artifact@v4
-        with:
-          name: regenerated-cargo-lock
-          path: Cargo.lock
-          if-no-files-found: error
+        run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: Check isolated GStreamer media PoC
@@ -75,27 +67,6 @@ jobs:
           FRAMELET_RUN_VISUAL_TESTS: "1"
           SLINT_SNAPSHOT_MODE: verify
         run: cargo test -p framelet-desktop --test visual_regression -- --exact main_window_default_state_matches_reference
-      - name: Persist regenerated workspace lockfile
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        shell: bash
-        run: |
-          git diff --binary -- Cargo.lock > "$RUNNER_TEMP/cargo-lock.patch"
-          if [[ ! -s "$RUNNER_TEMP/cargo-lock.patch" ]]; then
-            echo "Cargo.lock is already up to date."
-            exit 0
-          fi
-
-          branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          git checkout -- Cargo.lock
-          git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch"
-          git checkout -B "$branch" "origin/$branch"
-          git apply --3way "$RUNNER_TEMP/cargo-lock.patch"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.lock
-          git commit -m "chore(deps): refresh workspace lockfile"
-          git push origin "HEAD:$branch"
-
   windows:
     runs-on: windows-latest
     steps:
@@ -110,7 +81,7 @@ jobs:
         run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
       - name: Resolve workspace dependencies
-        run: cargo check --workspace
+        run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
 
