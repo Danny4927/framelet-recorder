@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "feat/**", "poc/**"]
+    branches: [main, "feat/**", "poc/**", "chore/**"]
   pull_request:
   workflow_dispatch:
 
@@ -22,11 +22,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good
       - uses: Swatinem/rust-cache@v2
-      - name: Enforce hexagonal core dependency boundary
+      - name: Enforce Rust safety and hexagonal architecture
         run: python scripts/check-architecture.py
+      - name: Check documentation structure and local links
+        run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
-      - name: Resolve workspace dependencies and refresh lockfile
-        run: cargo check --workspace
+      - name: Resolve workspace dependencies
+        run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: Check isolated GStreamer media PoC
@@ -69,11 +71,27 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Enforce Rust safety and hexagonal architecture
+        run: python scripts/check-architecture.py
+      - name: Check documentation structure and local links
+        run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
-      - name: Resolve workspace dependencies and refresh lockfile
-        run: cargo check --workspace
+      - name: Resolve workspace dependencies
+        run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  security:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   dependency-audit:
     runs-on: ubuntu-24.04
     steps:
@@ -90,3 +108,21 @@ jobs:
         run: cargo audit --deny unsound
       - name: Check licenses, sources, bans and advisories
         run: cargo deny check
+
+  coverage:
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install LLVM coverage tools
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Generate workspace coverage report
+        run: cargo llvm-cov --workspace --all-features --lcov --output-path lcov.info
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: lcov.info
+          if-no-files-found: error
