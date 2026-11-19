@@ -33,7 +33,13 @@ jobs:
         run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
       - name: Resolve workspace dependencies
-        run: cargo check --workspace --locked
+        run: cargo check --workspace
+      - name: Upload regenerated workspace lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
       - name: Check isolated GStreamer media PoC
@@ -82,7 +88,7 @@ jobs:
         run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
       - name: Resolve workspace dependencies
-        run: cargo check --workspace --locked
+        run: cargo check --workspace
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
 
