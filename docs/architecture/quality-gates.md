@@ -31,6 +31,15 @@ for this desktop application. Real-device capture tests remain a separately docu
 manual/platform validation activity; CI runners do not prove microphone, camera, portal,
 or compositor compatibility on end-user hardware.
 
+## CI execution and caching
+
+- Superseded runs for the same pull request or branch are cancelled; runs on `main` are never cancelled.
+- Isolated PoCs run in a separate `poc` matrix job in parallel with the workspace jobs. Each PoC has its
+  own Rust build cache, because the PoCs build into their own `target/` directories.
+- `cargo clippy --locked` already resolves and type-checks all targets, so no separate `cargo check` step runs.
+- `cargo-audit` and `cargo-deny` are installed as prebuilt release binaries via `taiki-e/install-action`
+  (already used for `cargo-llvm-cov`) instead of being compiled on every run.
+
 ## Architecture enforcement scope
 
 The architecture guard verifies:
