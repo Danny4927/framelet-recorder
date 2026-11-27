@@ -173,6 +173,8 @@ Exit criteria and proof:
 | C-6 | Real-device validation | [ ] Evidence records for the reference matrix entries claimed (at least one Linux Wayland and one Windows machine) using the C1 manual procedure, 10-minute standard run |
 | C-7 | Settings are robust | [ ] Tests for missing, malformed, out-of-range, and unwritable settings files |
 
+Note (C-7): no settings adapter exists yet. C2 names a TOML adapter, but the owning crate, the serialization dependency (ADR + dependency review) and the on-disk schema/default and out-of-range policy are not decided, so C-7 cannot be tested. Phase C as a whole is not complete.
+
 ## Phase D — Provisional media backend
 
 **Goal:** select a media backend provisionally (ADR-0018 stage 1) and ship microphone recording in the target audio format. The decision stays reversible because only one adapter crate depends on the backend.
@@ -215,6 +217,8 @@ Exit criteria and proof:
 | E-4 | A/V sync with microphone | [ ] Evidence record: clap/flash test or timecode overlay, measured offset < 100 ms at start and end of a 10-minute recording |
 | E-5 | Real platforms | [ ] E1: evidence records for GNOME and KDE Wayland; E2: Windows 10 and 11; display and window capture each |
 | E-6 | No permission bypass, no first-party unsafe | [ ] Review; `check-architecture.py`; dependency review record |
+
+Note (E-2, partial): `VideoFrame::new` now has boundary, overflow, exhaustive small-layout and seeded property tests against a `u128` reference predicate (see REQ-CAP-05 in the traceability matrix). E-2 stays open: the "configured maximum" dimension required by the capture contract has no specified value, so oversized-but-representable dimensions are not rejected, and no production conversion function exists yet. Phase E as a whole is not complete.
 
 ## Phase F — Webcam slice
 

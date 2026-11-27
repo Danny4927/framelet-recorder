@@ -380,6 +380,218 @@ mod tests {
         );
     }
 
+    fn frame_metadata(
+        width: u32,
+        height: u32,
+        stride: u32,
+        pixel_format: PixelFormat,
+    ) -> VideoFrameMetadata {
+        VideoFrameMetadata {
+            pixel_format,
+            ..metadata(width, height, stride)
+        }
+    }
+
+    /// Independent reference predicate computed in `u128`, so it cannot overflow.
+    fn reference_result(meta: &VideoFrameMetadata, len: usize) -> Result<(), CaptureError> {
+        if meta.width == 0 || meta.height == 0 {
+            return Err(CaptureError::InvalidVideoDimensions);
+        }
+        let bytes_per_pixel: u128 = match meta.pixel_format {
+            PixelFormat::Bgra8 | PixelFormat::Rgba8 => 4,
+        };
+        let minimum_stride = u128::from(meta.width) * bytes_per_pixel;
+        if minimum_stride > u128::from(u32::MAX) || u128::from(meta.stride) < minimum_stride {
+            return Err(CaptureError::InvalidVideoLayout);
+        }
+        let required = u128::from(meta.stride) * u128::from(meta.height);
+        let addressable = u128::try_from(usize::MAX).unwrap_or(u128::MAX);
+        if required > addressable {
+            return Err(CaptureError::InvalidVideoLayout);
+        }
+        let len = u128::try_from(len).unwrap_or(u128::MAX);
+        if len < required {
+            return Err(CaptureError::VideoBufferTooShort);
+        }
+        Ok(())
+    }
+
+    /// Runs the real constructor with a real buffer of `len` bytes.
+    fn constructor_result(meta: &VideoFrameMetadata, len: usize) -> Result<(), CaptureError> {
+        VideoFrame::new(meta.clone(), vec![0; len]).map(|_| ())
+    }
+
+    /// Required buffer length in `u128`, when the layout itself is valid.
+    fn reference_required_len(meta: &VideoFrameMetadata) -> Option<u128> {
+        reference_result(meta, usize::MAX)
+            .ok()
+            .map(|()| u128::from(meta.stride) * u128::from(meta.height))
+    }
+
+    #[test]
+    fn video_frame_rejects_every_zero_dimension_combination() {
+        for (width, height) in [(0, 0), (0, 1), (1, 0), (0, u32::MAX), (u32::MAX, 0)] {
+            assert_eq!(
+                VideoFrame::new(metadata(width, height, u32::MAX), vec![0; 64]),
+                Err(CaptureError::InvalidVideoDimensions)
+            );
+        }
+    }
+
+    #[test]
+    fn video_frame_rejects_width_whose_minimum_stride_overflows_u32() {
+        // 4 * (u32::MAX / 4 + 1) overflows u32.
+        let width = u32::MAX / 4 + 1;
+        assert_eq!(
+            VideoFrame::new(metadata(width, 1, u32::MAX), Vec::new()),
+            Err(CaptureError::InvalidVideoLayout)
+        );
+        assert_eq!(
+            VideoFrame::new(metadata(u32::MAX, u32::MAX, u32::MAX), Vec::new()),
+            Err(CaptureError::InvalidVideoLayout)
+        );
+    }
+
+    #[test]
+    fn video_frame_rejects_oversized_dimensions_without_allocating() {
+        // Largest representable layout: the required length is either not
+        // addressable (32-bit) or far larger than the empty buffer (64-bit).
+        let result = VideoFrame::new(metadata(u32::MAX / 4, u32::MAX, u32::MAX), Vec::new());
+        #[cfg(target_pointer_width = "64")]
+        assert_eq!(result, Err(CaptureError::VideoBufferTooShort));
+        #[cfg(not(target_pointer_width = "64"))]
+        assert_eq!(result, Err(CaptureError::InvalidVideoLayout));
+    }
+
+    #[test]
+    fn video_frame_accepts_padded_stride_and_longer_buffer() {
+        assert!(VideoFrame::new(metadata(2, 2, 12), vec![0; 24]).is_ok());
+        assert!(VideoFrame::new(metadata(2, 2, 8), vec![0; 17]).is_ok());
+        assert_eq!(
+            VideoFrame::new(metadata(2, 2, 12), vec![0; 23]),
+            Err(CaptureError::VideoBufferTooShort)
+        );
+    }
+
+    #[test]
+    fn video_frame_validates_every_supported_pixel_format() {
+        // `PixelFormat` is a closed enum: unsupported formats are unrepresentable
+        // at this boundary, so adapters must map unknown native formats to
+        // `CaptureError::UnsupportedFormat` before constructing a frame.
+        for format in [PixelFormat::Bgra8, PixelFormat::Rgba8] {
+            assert!(VideoFrame::new(frame_metadata(3, 1, 12, format), vec![0; 12]).is_ok());
+            assert_eq!(
+                VideoFrame::new(frame_metadata(3, 1, 11, format), vec![0; 12]),
+                Err(CaptureError::InvalidVideoLayout)
+            );
+        }
+    }
+
+    #[test]
+    fn video_frame_matches_reference_exhaustively_for_small_layouts() {
+        for format in [PixelFormat::Bgra8, PixelFormat::Rgba8] {
+            for width in 0..=4 {
+                for height in 0..=4 {
+                    for stride in 0..=20 {
+                        for len in 0..=80 {
+                            let meta = frame_metadata(width, height, stride, format);
+                            assert_eq!(
+                                constructor_result(&meta, len),
+                                reference_result(&meta, len),
+                                "{meta:?} len={len}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    struct XorShift(u64);
+
+    impl XorShift {
+        fn next(&mut self) -> u64 {
+            let mut x = self.0;
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            self.0 = x;
+            x
+        }
+
+        fn pick_u32(&mut self) -> u32 {
+            const EDGES: [u32; 10] = [
+                0,
+                1,
+                2,
+                3,
+                4,
+                u32::MAX / 4,
+                u32::MAX / 4 + 1,
+                u32::MAX - 1,
+                u32::MAX,
+                1 << 16,
+            ];
+            let value = self.next();
+            let low = u32::try_from(value & 0xFFFF_FFFF).unwrap_or(0);
+            match value >> 60 {
+                0..=5 => EDGES[usize::try_from(value % 10).unwrap_or(0)],
+                6..=10 => low % 64,
+                _ => low,
+            }
+        }
+
+        fn pick_len(&mut self) -> usize {
+            let value = self.next();
+            match value >> 61 {
+                0 => 0,
+                1 => usize::MAX,
+                2 => usize::MAX - 1,
+                3 | 4 => usize::try_from(value % 4096).unwrap_or(0),
+                _ => usize::try_from(value % (1 << 40)).unwrap_or(usize::MAX),
+            }
+        }
+    }
+
+    #[test]
+    fn video_frame_matches_reference_for_seeded_random_layouts() {
+        let mut rng = XorShift(0x9E37_79B9_7F4A_7C15);
+        for _ in 0..200_000 {
+            let format = if rng.next() & 1 == 0 {
+                PixelFormat::Bgra8
+            } else {
+                PixelFormat::Rgba8
+            };
+            let meta = frame_metadata(rng.pick_u32(), rng.pick_u32(), rng.pick_u32(), format);
+            const ALLOCATION_LIMIT: u128 = 1 << 20;
+            match reference_required_len(&meta) {
+                Some(required) if required <= ALLOCATION_LIMIT => {
+                    let random = u128::from(rng.next() % 4096);
+                    let candidates = [required.saturating_sub(1), required, required + 1, random];
+                    for candidate in candidates {
+                        let len = usize::try_from(candidate).unwrap_or(0);
+                        assert_eq!(
+                            constructor_result(&meta, len),
+                            reference_result(&meta, len),
+                            "{meta:?} len={len}"
+                        );
+                    }
+                }
+                _ => {
+                    // Too large to allocate: the real constructor with an empty
+                    // buffer must report the exact reference error.
+                    let len = rng.pick_len();
+                    let expected = reference_result(&meta, 0);
+                    assert!(expected.is_err(), "{meta:?}");
+                    assert_eq!(constructor_result(&meta, 0), expected, "{meta:?}");
+                    // Arbitrary huge lengths only change the outcome for valid
+                    // layouts; the reference must stay panic-free for them.
+                    let _ = reference_result(&meta, len);
+                }
+            }
+        }
+    }
+
     #[test]
     fn audio_block_counts_interleaved_sample_frames() {
         let block = AudioBlock::new(48_000, 2, Duration::ZERO, Some(0), vec![0.0; 960]);
