@@ -49,9 +49,37 @@ and introduces no third-party dependency.
   metadata journaling, and platform-specific fault injection remain open.
 - The desktop composition root remains unchanged until compatible media wiring.
 
+## Fault-injection seam
+
+All filesystem calls go through a crate-private `FileOperations` trait
+(`crates/storage/src/fs_ops.rs`). Production uses `StdFileOperations` (`std::fs`);
+tests use a `#[cfg(test)]` `FaultyFileOperations` that wraps it on a temporary
+directory and fails scripted calls. The seam is not a core port, never crosses
+the core boundary, and leaves the public `FileSystemRecordingStorage::new` API
+unchanged.
+
+`close` performs the file's single `sync_all` (there is no separate sync step)
+and then drops the handle, so durability and close-time errors surface instead
+of being lost in `Drop`. Reservation runs create-exclusive, flush, close;
+publication runs open, close,
+hard-link, remove-temporary. A handle is always released before cleanup.
+
+| Failure | Result | Filesystem state |
+| --- | --- | --- |
+| `StorageFull` at any step | `PortError::StorageExhausted` | as below |
+| `PermissionDenied`, `NotFound`, `AlreadyExists`, other | `PortError::Failed(..)` | as below |
+| Reservation flush/close fails | error, no session registered | candidate removed |
+| ...and cleanup also fails | `StorageExhausted` if the cause was `StorageFull`, else `Failed` naming both causes | candidate left, reported by orphan scan |
+| Publication open/close/link fails | error, session retained | no final file; existing destination untouched; `abort` works |
+| Link succeeds, temporary removal fails | error, session retained | complete final file visible; retry refuses to overwrite; `abort` removes the candidate |
+| Abort removal fails | error, session retained | candidate kept; abort retryable |
+| Orphan scan fails | error | nothing deleted |
+
 ## Validation
 
 - Unit tests cover exclusive temporary output, successful publication, abort,
   preservation of existing files, missing-candidate failure, and orphan scanning.
+- Fault-injected adapter tests cover the failure table above, including a
+  table-driven check that `StorageFull` at any step never yields success.
 - Linux and Windows CI check compilation, tests, Clippy, and formatting.
 - Real power-loss and clean-machine filesystem validation remain release gates.

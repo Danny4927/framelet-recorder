@@ -135,6 +135,7 @@ Deliverables:
 
 Exit criteria:
 - [ ] Fault-injected tests cover write, flush, close, publication, and disk-full failures on supported filesystems.
+  - Note: adapter-level fault-injection coverage exists in `crates/storage` (a private `FileOperations` seam injects StorageFull/PermissionDenied/NotFound/other errors into create, flush, sync, close, hard-link, remove, and directory scan; see ADR-0014). Media-writer `write` failures belong to the not-yet-selected media adapter. Real-filesystem runs on NTFS, ext4, and btrfs (including genuine disk-full) remain open, so this box stays unchecked.
 - [x] Existing recordings are never silently overwritten by the adapter's no-replace publication strategy.
 - [x] Recovery discovery reports orphaned candidates without destructive cleanup.
 - [x] Core depends only on the storage port; the adapter depends inward on core.

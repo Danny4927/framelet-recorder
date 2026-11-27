@@ -26,4 +26,8 @@ Agent tool to the agents in `.claude/agents/`. Tiers, cheapest first:
    check as passed, failed (with output) or not configured; which tiers were
    used and any escalations; open MINOR findings.
 
-Never commit, push or open a PR unless the user asked for it.
+7. **Deliver.** Once review is approved and the checks are reported, commit
+   the change on the session's development branch, push it, and open a pull
+   request (mirror the repository's PR template if present). The PR body
+   lists the check results, tiers used and open MINOR findings. Never commit
+   a red build or unresolved BLOCKER/MAJOR findings; stop and report instead.

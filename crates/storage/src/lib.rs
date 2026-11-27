@@ -4,13 +4,22 @@
 //! The adapter reserves an exclusive temporary file, accepts media written by a
 //! separate media adapter, and publishes only after that writer has closed.
 
+mod fs_ops;
+
+#[cfg(test)]
+mod fault;
+
+#[cfg(test)]
+mod fault_tests;
+
 use std::collections::HashMap;
-use std::fs::{self, OpenOptions};
-use std::io::{self, Write};
+use std::io;
 use std::path::{Path, PathBuf};
 
 use framelet_core::ports::{MediaSessionId, PortError, RecordingStoragePort};
 use framelet_core::{RecordingArtifact, RecordingConfiguration, RecordingId};
+
+use fs_ops::{FileHandle, FileOperations, StdFileOperations};
 
 /// Filesystem-backed implementation of the core-owned storage port.
 ///
@@ -20,6 +29,7 @@ pub struct FileSystemRecordingStorage {
     output_directory: PathBuf,
     active: HashMap<MediaSessionId, PendingOutput>,
     next_session: u64,
+    operations: Box<dyn FileOperations + Send>,
 }
 
 struct PendingOutput {
@@ -30,11 +40,21 @@ struct PendingOutput {
 impl FileSystemRecordingStorage {
     /// Creates and validates the output directory.
     pub fn new(output_directory: impl Into<PathBuf>) -> Result<Self, PortError> {
+        Self::with_operations(output_directory, Box::new(StdFileOperations))
+    }
+
+    /// Creates the adapter with an explicit filesystem seam (used by fault-injection tests).
+    pub(crate) fn with_operations(
+        output_directory: impl Into<PathBuf>,
+        operations: Box<dyn FileOperations + Send>,
+    ) -> Result<Self, PortError> {
         let output_directory = output_directory.into();
-        fs::create_dir_all(&output_directory).map_err(map_io_error)?;
-        if !fs::metadata(&output_directory)
+        operations
+            .create_dir_all(&output_directory)
+            .map_err(map_io_error)?;
+        if !operations
+            .metadata_is_dir(&output_directory)
             .map_err(map_io_error)?
-            .is_dir()
         {
             return Err(PortError::InvalidInput(
                 "recording output path is not a directory".into(),
@@ -44,6 +64,7 @@ impl FileSystemRecordingStorage {
             output_directory,
             active: HashMap::new(),
             next_session: 1,
+            operations,
         })
     }
 
@@ -59,18 +80,14 @@ impl FileSystemRecordingStorage {
 
     /// Finds interrupted-session candidates without deleting or modifying them.
     pub fn find_orphaned_temporary_files(&self) -> Result<Vec<PathBuf>, PortError> {
-        let mut orphaned = Vec::new();
-        for entry in fs::read_dir(&self.output_directory).map_err(map_io_error)? {
-            let entry = entry.map_err(map_io_error)?;
-            if entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with(".framelet-pending-")
-                && entry.file_type().map_err(map_io_error)?.is_file()
-            {
-                orphaned.push(entry.path());
-            }
-        }
+        let mut orphaned: Vec<PathBuf> = self
+            .operations
+            .read_dir_names(&self.output_directory)
+            .map_err(map_io_error)?
+            .into_iter()
+            .filter(|entry| entry.is_file && entry.name.starts_with(".framelet-pending-"))
+            .map(|entry| entry.path)
+            .collect();
         orphaned.sort();
         Ok(orphaned)
     }
@@ -92,23 +109,23 @@ impl FileSystemRecordingStorage {
         let mut sequence = first_sequence;
         loop {
             let (temporary_path, final_path) = self.paths(recording_id, sequence);
-            match OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary_path)
-            {
-                Ok(mut reservation) => {
-                    if let Err(error) = reservation.flush().and_then(|()| reservation.sync_all()) {
-                        drop(reservation);
-                        let cleanup = fs::remove_file(&temporary_path);
-                        return match cleanup {
-                            Ok(()) => Err(map_io_error(error)),
-                            Err(cleanup_error) => Err(PortError::Failed(format!(
-                                "could not sync temporary recording ({error}); cleanup also failed ({cleanup_error})"
-                            ))),
-                        };
+            match self.operations.create_exclusive(&temporary_path) {
+                Ok(reservation) => {
+                    if let Err(error) = self.settle_reservation(reservation) {
+                        return Err(match self.operations.remove_file(&temporary_path) {
+                            Ok(()) => map_io_error(error),
+                            Err(_) if error.kind() == io::ErrorKind::StorageFull => {
+                                // Disk-full stays typed; the leftover candidate is
+                                // reported by the orphan scan.
+                                PortError::StorageExhausted
+                            }
+                            Err(cleanup_error) => PortError::Failed(format!(
+                                "could not persist temporary recording ({}); cleanup also failed ({})",
+                                describe(&error),
+                                describe(&cleanup_error)
+                            )),
+                        });
                     }
-                    drop(reservation);
                     return Ok((sequence, temporary_path, final_path));
                 }
                 Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
@@ -119,6 +136,19 @@ impl FileSystemRecordingStorage {
                 Err(error) => return Err(map_io_error(error)),
             }
         }
+    }
+
+    /// Flushes and explicitly closes (close syncs) a handle so every error surfaces.
+    /// The handle is always released, even when an earlier step fails.
+    fn settle_reservation(&self, mut handle: FileHandle) -> io::Result<()> {
+        self.operations.flush(&mut handle)?;
+        // `close` performs the single sync_all so its error surfaces.
+        self.operations.close(handle)
+    }
+
+    fn settle_candidate(&self, handle: FileHandle) -> io::Result<()> {
+        // `close` performs the single sync_all so its error surfaces.
+        self.operations.close(handle)
     }
 }
 
@@ -153,17 +183,17 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
 
         // The media writer must be closed by its owner before this call.
-        let candidate = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&pending.temporary_path)
+        let candidate = self
+            .operations
+            .open_existing(&pending.temporary_path)
             .map_err(map_io_error)?;
-        candidate.sync_all().map_err(map_io_error)?;
-        drop(candidate);
+        self.settle_candidate(candidate).map_err(map_io_error)?;
 
         // Same-filesystem hard-link creation gives atomic visibility and no-replace.
         // It fails closed on filesystems without hard-link support.
-        fs::hard_link(&pending.temporary_path, &pending.final_path).map_err(map_io_error)?;
+        self.operations
+            .hard_link_no_replace(&pending.temporary_path, &pending.final_path)
+            .map_err(map_io_error)?;
 
         // Construct the application-owned descriptor before committing the
         // publication. This keeps all fallible validation ahead of temp cleanup.
@@ -176,7 +206,9 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         // while leaving a complete recording visible. Retain the active entry so
         // the caller can retry cleanup; subsequent publish detects the existing
         // destination and refuses to overwrite it.
-        fs::remove_file(&pending.temporary_path).map_err(map_io_error)?;
+        self.operations
+            .remove_file(&pending.temporary_path)
+            .map_err(map_io_error)?;
         self.active.remove(session);
         Ok(artifact)
     }
@@ -186,13 +218,22 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
             .active
             .get(session)
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
-        match fs::remove_file(&pending.temporary_path) {
+        match self.operations.remove_file(&pending.temporary_path) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(map_io_error(error)),
         }
         self.active.remove(session);
         Ok(())
+    }
+}
+
+fn describe(error: &io::Error) -> String {
+    match error.kind() {
+        io::ErrorKind::StorageFull => "storage full".into(),
+        io::ErrorKind::PermissionDenied => "permission denied".into(),
+        io::ErrorKind::NotFound => "path not found".into(),
+        _ => error.to_string(),
     }
 }
 
@@ -211,6 +252,7 @@ fn map_io_error(error: io::Error) -> PortError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(label: &str) -> PathBuf {
