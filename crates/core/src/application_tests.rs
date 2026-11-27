@@ -836,3 +836,44 @@ fn rejected_loss_does_not_hide_other_losses_and_stays_tracked() {
         .count();
     assert_eq!(microphone_stops, 1);
 }
+
+#[test]
+fn application_errors_describe_failures_and_count_further_ones() {
+    let failure = CapabilityFailure {
+        capability: RecordingCapability::Storage,
+        error: PortError::StorageExhausted,
+    };
+    assert_eq!(failure.to_string(), "Storage: storage exhausted");
+    let single = ApplicationError::CapabilityFailed {
+        failure: failure.clone(),
+        additional_failures: Vec::new(),
+    };
+    assert_eq!(
+        single.to_string(),
+        "recording capability failed: Storage: storage exhausted"
+    );
+    let multiple = ApplicationError::CapabilityFailed {
+        failure: failure.clone(),
+        additional_failures: vec![failure.clone()],
+    };
+    assert_eq!(
+        multiple.to_string(),
+        "recording capability failed: Storage: storage exhausted (+1 further failure(s))"
+    );
+    let lost = ApplicationError::SourceLost {
+        kind: SourceKind::Microphone,
+        additional_failures: Vec::new(),
+    };
+    assert_eq!(
+        lost.to_string(),
+        "recording stopped: Microphone source lost"
+    );
+    let lost_more = ApplicationError::SourceLost {
+        kind: SourceKind::Microphone,
+        additional_failures: vec![failure],
+    };
+    assert_eq!(
+        lost_more.to_string(),
+        "recording stopped: Microphone source lost (+1 further failure(s))"
+    );
+}

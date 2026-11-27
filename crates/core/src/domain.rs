@@ -647,4 +647,38 @@ mod tests {
             Err(DomainError::EmptyArtifactLocation)
         );
     }
+
+    #[test]
+    fn recording_id_and_configuration_expose_their_values() {
+        assert_eq!(RecordingId::new(42).value(), 42);
+        assert!(config(RecordingMode::Screen, true).includes_microphone());
+        assert!(!config(RecordingMode::Screen, false).includes_microphone());
+    }
+
+    #[test]
+    fn resume_returns_a_paused_session_to_recording() {
+        let mut session =
+            RecordingSession::new(RecordingId::new(1), config(RecordingMode::Screen, false));
+        session.begin_preparation().unwrap();
+        session.mark_ready().unwrap();
+        session.start().unwrap();
+        session.pause().unwrap();
+        session.resume().unwrap();
+        assert_eq!(session.state(), RecordingState::Recording);
+        assert_eq!(
+            session.resume(),
+            Err(DomainError::InvalidTransition {
+                from: RecordingState::Recording,
+                to: RecordingState::Recording,
+            })
+        );
+    }
+
+    #[test]
+    fn domain_errors_have_descriptive_messages() {
+        assert_eq!(
+            DomainError::MissingSource(SourceKind::Camera).to_string(),
+            "recording configuration requires a Camera source"
+        );
+    }
 }

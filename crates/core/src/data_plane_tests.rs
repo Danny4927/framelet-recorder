@@ -319,3 +319,50 @@ fn taking_sinks_removes_them() {
     assert!(!sinks.has(SourceKind::Microphone));
     assert!(sinks.has(SourceKind::Camera));
 }
+
+#[test]
+fn recv_timeout_returns_a_queued_item_without_waiting() {
+    let (mut sink, mut stream) = video_channel(1).expect("channel");
+    assert_eq!(sink.try_send(frame(3)), VideoDelivery::Accepted);
+    let started = std::time::Instant::now();
+    assert_eq!(
+        sequence_of(stream.recv_timeout(Duration::from_secs(30))),
+        Some(3)
+    );
+    // Waiting out the timeout would mean a queued item was not seen.
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
+#[test]
+fn dropping_a_video_sink_is_visible_to_its_monitor() {
+    let (sink, _stream) = video_channel(1).expect("channel");
+    let monitor = sink.monitor();
+    assert_eq!(monitor.stats().end, None);
+    drop(sink);
+    assert_eq!(monitor.stats().end, Some(StreamEnd::Stopped));
+}
+
+#[test]
+fn data_plane_errors_and_debug_output_are_descriptive() {
+    assert_eq!(
+        DataPlaneError::InvalidCapacity {
+            requested: 0,
+            maximum: 8
+        }
+        .to_string(),
+        "media queue capacity 0 is outside 1..=8"
+    );
+    let (video, video_stream) = video_channel(1).expect("channel");
+    let (audio, audio_stream) = audio_channel(1).expect("channel");
+    let monitor = video.monitor();
+    for (text, prefix) in [
+        (format!("{video:?}"), "VideoSink("),
+        (format!("{video_stream:?}"), "VideoStream("),
+        (format!("{audio:?}"), "AudioSink("),
+        (format!("{audio_stream:?}"), "AudioStream("),
+        (format!("{monitor:?}"), "StreamMonitor("),
+    ] {
+        assert!(text.starts_with(prefix), "{text}");
+        assert!(text.contains("capacity: 1"), "{text}");
+    }
+}

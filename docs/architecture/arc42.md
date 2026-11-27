@@ -303,6 +303,7 @@ See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in 
 | ADR-0019 | Slint-generated entry points use `deny(unsafe_code)` | Accepted — records existing exception |
 | ADR-0020 | Core-owned bounded data plane, overload policy, and source loss | Proposed — implemented, awaiting acceptance |
 | ADR-0021 | Storage-to-media hand-off through the core, and shared port contract suites | Proposed — implemented, awaiting acceptance |
+| ADR-0022 | Mutation testing of `framelet-core` with cargo-mutants | Proposed — implemented, awaiting acceptance |
 
 ## 10. Quality Requirements
 

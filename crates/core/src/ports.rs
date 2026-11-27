@@ -473,4 +473,21 @@ mod tests {
         assert_eq!(RecordingMetrics::default().rejected_audio_blocks, 0);
         assert_eq!(RecordingMetrics::default().dropped_video_frames, 0);
     }
+
+    #[test]
+    fn storage_session_id_preserves_value() {
+        assert_eq!(
+            StorageSessionId::new("storage-1").unwrap().as_str(),
+            "storage-1"
+        );
+    }
+
+    #[test]
+    fn port_errors_have_descriptive_messages() {
+        assert_eq!(PortError::StorageExhausted.to_string(), "storage exhausted");
+        assert_eq!(
+            PortError::Failed("disk".into()).to_string(),
+            "adapter operation failed: disk"
+        );
+    }
 }

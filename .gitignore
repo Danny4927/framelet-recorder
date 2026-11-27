@@ -11,3 +11,5 @@ Thumbs.db
 .vscode/
 .idea/
 scripts/__pycache__/
+mutants.out/
+mutants.out.old/

@@ -510,3 +510,34 @@ fn resume_before_mapped_paused_sample_is_rejected() {
         ))
     );
 }
+
+#[test]
+fn timestamp_values_round_trip() {
+    assert_eq!(at(7).as_nanos(), 7);
+    assert_eq!(PresentationTimestamp::from_nanos(9).as_nanos(), 9);
+    let segment = PauseSegment::new(at(10), at(25)).expect("ordered segment");
+    assert_eq!(segment.duration_nanos(), 15);
+}
+
+#[test]
+fn first_sample_exactly_at_a_closed_pause_start_is_inside_the_pause() {
+    let mut timeline = RecordingTimeline::new(at(0), u64::MAX);
+    assert!(matches!(
+        timeline.map(SourceKind::Screen, at(5)),
+        Ok(TimelineMapping::Presented(_))
+    ));
+    timeline.begin_pause(at(10)).expect("pause");
+    timeline.end_pause(at(20)).expect("resume");
+    assert_eq!(
+        timeline.map(SourceKind::Camera, at(10)),
+        Ok(TimelineMapping::DuringPause)
+    );
+}
+
+#[test]
+fn timeline_errors_have_descriptive_messages() {
+    assert_eq!(
+        TimelineError::ResumeBeforePause.to_string(),
+        "resume precedes pause start"
+    );
+}

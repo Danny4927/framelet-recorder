@@ -25,5 +25,6 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0019](ADR-0019-slint-entry-points-deny-unsafe.md) | Slint-generated entry points use `deny(unsafe_code)` | Accepted — records existing exception |
 | [ADR-0020](ADR-0020-bounded-data-plane-and-source-loss.md) | Core-owned bounded data plane, overload policy, and source loss | Proposed — implemented, awaiting human acceptance |
 | [ADR-0021](ADR-0021-storage-media-hand-off-and-contract-suites.md) | Storage-to-media hand-off through the core, and shared port contract suites | Proposed — implemented, awaiting human acceptance |
+| [ADR-0022](ADR-0022-cargo-mutants-mutation-testing.md) | Mutation testing of `framelet-core` with cargo-mutants | Proposed — implemented, awaiting human acceptance |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.
