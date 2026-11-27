@@ -125,19 +125,21 @@ Exit criteria:
 
 ## Phase 3 — Transactional local storage
 
-**Merged slice:** PR #16 introduces the isolated filesystem adapter for `RecordingStoragePort`; see [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md) and `crates/storage/README.md`. The desktop composition root is not wired to the adapter. The next storage hardening slice adds collision-safe reservation retries and failure-path regression coverage; this does not approve a production media backend.
+**Merged slice:** PR #16 introduces the isolated filesystem adapter for `RecordingStoragePort`; see [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md) and `crates/storage/README.md`. The filesystem adapter is now instantiated by the desktop composition root for output-directory validation and non-destructive orphan discovery. The UI displays the default directory and recovery scan results; native directory selection remains open because no cross-platform dialog adapter has been approved. This does not approve a production media backend.
 
 Deliverables:
 - Storage port and filesystem adapter for exclusive temporary output, collision-safe destination naming, flush/close, no-replace publication, and recovery discovery.
 - Explicit behavior for disk full, permission errors, path invalidation, process interruption, and existing files.
 - No overwrite by default; no success before finalization and close.
-- Media writer integration and composition remain blocked on a production media decision and are not claimed by this slice.
+- Media writer integration and composition remain blocked on a production media decision and are not claimed by this slice. The prepare-recording action remains visibly disabled until a real media backend and capture path are integrated.
 
 Exit criteria:
 - [ ] Fault-injected tests cover write, flush, close, publication, and disk-full failures on supported filesystems.
 - [x] Existing recordings are never silently overwritten by the adapter's no-replace publication strategy.
 - [x] Recovery discovery reports orphaned candidates without destructive cleanup.
 - [x] Core depends only on the storage port; the adapter depends inward on core.
+- [x] Desktop composition root uses the storage adapter to validate the default output path and run non-destructive orphan discovery; the UI displays results.
+- [ ] Native output-directory selection is implemented through an approved cross-platform dialog adapter.
 - [ ] Desktop/media integration and closed-writer hand-off are verified.
 - [ ] Filesystem durability and real power-loss recovery are validated on supported OS/filesystems.
 
