@@ -8,6 +8,7 @@
 pub mod application;
 pub mod domain;
 pub mod ports;
+pub mod timeline;
 
 pub use application::*;
 pub use domain::*;

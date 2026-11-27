@@ -242,7 +242,7 @@ Every queue has a fixed capacity and policy. Video may drop stale frames to boun
 
 ### Time and synchronization
 
-Use a monotonic clock and common origin. Preserve source timestamps where possible; track audio sample positions and video sequence numbers. Handle discontinuities, variable frame rates, pause segments, and drift. Wall-clock time may label files but never drives A/V sync. Test fixtures must make the expected audio/video timeline explicit so tests detect mismatched PTS, durations, and sample positions.
+Use a monotonic clock and common origin. Preserve source timestamps where possible; track audio sample positions and video sequence numbers. Handle discontinuities, variable frame rates, pause segments, and drift. Wall-clock time may label files but never drives A/V sync. Test fixtures must make the expected audio/video timeline explicit so tests detect mismatched PTS, durations, and sample positions. The core `RecordingTimeline` aggregate maps monotonic source timestamps to PTS = active time since T0 minus half-open pause segments, reports samples before T0 or during pauses, per-stream regressions/duplicates and threshold-exceeding gaps explicitly, and uses checked arithmetic throughout; it is verified against a u128 reference oracle by exhaustive and seeded randomized tests (A-6).
 
 ### Security and privacy
 
@@ -340,6 +340,10 @@ Implementation sequencing and phase exit criteria are defined in [Implementation
 | Core | Application layer owning use cases and recording lifecycle |
 | Muxing | Combining encoded streams into a media container |
 | Monotonic clock | Clock suitable for elapsed time that does not move backwards |
+| T0 (timeline origin) | Monotonic instant chosen by core at start; presentation time 0 |
+| Pause segment | Half-open monotonic interval `[start, end)` excluded from presentation time |
+| PTS (presentation timestamp) | Active nanoseconds since T0 with all pause segments removed |
+| Discontinuity | Pause-excluded gap between consecutive samples of a stream that exceeds the configured threshold |
 | Port | Application-owned interface for an external capability |
 | PipeWire | Linux multimedia transport for portal-provided streams |
 | XDG Desktop Portal | Desktop-mediated interface for user-controlled resource access |
