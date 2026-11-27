@@ -26,6 +26,8 @@ a global threshold would incentivize low-value tests. Coverage should first esta
 a baseline. Future thresholds should focus on domain/application behavior and should
 not reward testing trivial getters or platform glue.
 
+Real-device and measurement evidence follows the [verification framework](../verification/README.md).
+
 Visual regression remains a required Linux test because UI regressions are meaningful
 for this desktop application. Real-device capture tests remain a separately documented
 manual/platform validation activity; CI runners do not prove microphone, camera, portal,

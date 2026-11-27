@@ -1,38 +1,68 @@
 # Framelet implementation roadmap
 
 **Status:** Binding delivery plan  
-**Last updated:** 17 November 2026  
+**Last updated:** 27 November 2026 (re-sequenced; see [ADR-0018](adr/ADR-0018-risk-first-resequencing-and-two-stage-media-decision.md))  
 **Architecture authority:** [arc42](arc42.md), [ADR index](adr/README.md)  
+**Verification authority:** [Verification framework](../verification/README.md)  
 **Mandatory implementation style:** Domain-Driven Design (DDD) inside the application core, hexagonal architecture (ports and adapters), safe Rust, local-first operation.
 
-This roadmap defines the intended implementation order, dependencies, deliverables, and exit criteria. A phase is not complete merely because code compiles: its architectural, behavioral, test, and documentation gates must also pass. Re-plan through an ADR when evidence requires a structural change.
+This roadmap defines the implementation order, dependencies, deliverables, exit criteria, and — for every phase — **how it is proven that the phase is correct and complete**. A phase is not complete merely because code compiles or a checkbox is ticked: every exit criterion must point to verifiable evidence (a named automated test, a CI job, or an evidence record). Re-plan through an ADR when evidence requires a structural change.
+
+## Why this plan was re-sequenced
+
+The previous plan (Phases 0–8) made every capture phase wait for an open-ended media-backend evaluation whose own exit gates (real-capture drift, clean-machine packaging, plugin licensing) could only be satisfied after the capture phases. That was circular. The largest technical risks — Windows capture without first-party `unsafe`, webcam support, and the redistributability of H.264/AAC — had no prototype at all, while the application could not record anything after 26 PRs. The new order:
+
+1. closes architecture debt in the core before real adapters build on it,
+2. retires the largest unknowns early with time-boxed spikes that end in Go/No-Go,
+3. delivers a real, recordable walking skeleton as soon as possible,
+4. replaces "defer until everything is proven" with a reversible **provisional** backend decision and a later **production** approval (ADR-0018).
 
 ## Planning and tracking policy
 
-The project plan, phase breakdown, progress states, decisions, and open work are maintained as Markdown files in this Git repository (primarily this roadmap, arc42, the specification, and ADRs). **Do not create or maintain GitHub Issues for project planning, tasks, bugs, phase tracking, or backlog management.** Update the relevant Markdown document in the same PR as the implementation change. Pull requests remain the mechanism for proposing, reviewing, and delivering code; they are not a reason to mirror the plan into Issues. Keep the plan usable directly from a repository checkout and readable in GitHub's Markdown renderer.
+The project plan, phase breakdown, progress states, decisions, and open work are maintained as Markdown files in this Git repository (this roadmap, arc42, the specification, ADRs, and the [verification records](../verification/README.md)). **Do not create or maintain GitHub Issues for project planning, tasks, bugs, phase tracking, or backlog management.** Update the relevant Markdown document in the same PR as the implementation change. Pull requests remain the mechanism for proposing, reviewing, and delivering code.
+
+## How correctness and completeness are proven
+
+The detailed rules are in the [verification framework](../verification/README.md). In short:
+
+| Question | Proof mechanism |
+|---|---|
+| **Complete?** Is every requirement of the phase implemented? | Every requirement has a stable ID in the [traceability matrix](../verification/traceability.md) and is assigned to exactly one phase. A phase is complete only when every row assigned to it is in state *verified*, i.e. links to an existing automated test and, where the row demands it, an evidence record. From Phase A on, `scripts/check-traceability.py` enforces in CI that every linked test exists. |
+| **Correct?** Does it behave as specified? | Each row names its verification method: unit/aggregate test, exhaustive or property-based test, shared port contract test suite, fault-injection test, output-file inspection, real-device evidence record, or measurement. The method must be able to fail: tests assert outcomes and call order, not just "no panic". |
+| **Correct on the real platform?** | Evidence records (`docs/verification/evidence/`) using the template, with commit SHA, OS/compositor, hardware, device models, procedure, observations, and raw artifacts (for example `ffprobe` output). CI never substitutes for a real-device record. |
+| **Strong enough tests?** | Mutation testing on `framelet-core` (introduced in Phase A after tool review) with every surviving mutant killed or justified; fakes must pass the same contract suite as real adapters. |
+| **Architecture still intact?** | `scripts/check-architecture.py` (dependency allowlist, forbidden references, unsafe declarations) and reviewer sign-off against AGENTS.md. |
+
+Track four separate evidence states per requirement: **implemented**, **automated-tested**, **UI-integrated**, **real-device-validated**. Never conflate them.
+
+**Phase closure:** a phase is closed by a dedicated PR (or the last slice PR) that (1) sets every criterion's evidence link, (2) updates the traceability matrix, (3) updates this roadmap's status table, and (4) carries a reviewer sign-off. A criterion without a link stays unchecked.
 
 ## Delivery principle: vertical, UI-testable increments
 
-After the architecture/core foundation, user-visible capabilities MUST be delivered as vertical slices. Each slice connects the real capability through its adapter, core use case, desktop composition root, and Slint UI in the same PR (or a clearly linked, immediately following PR when a dependency gate makes that impossible). Do not accumulate completed backend features that cannot be exercised from the application until a late integration phase.
+From Phase C on, user-visible capabilities MUST be delivered as vertical slices. Each slice connects the real capability through its adapter, core use case, desktop composition root, and Slint UI in the same PR (or a clearly linked, immediately following PR when a dependency gate makes that impossible).
 
-Every slice must:
-- Expose the implemented capability in the running desktop UI, with real state and typed error feedback; never use a mock success state as evidence of production integration.
-- Include a concise manual UI test procedure and record which OS/device combinations were actually tested. CI/UI snapshots do not replace real-device evidence.
-- Keep not-yet-implemented controls visibly disabled or explicitly marked as unavailable; no dead buttons, fake device selectors, or misleading “ready” status.
-- Include automated core/adapter/UI tests and preserve hexagonal dependency direction, DDD invariants, safe-Rust rules, and non-blocking UI.
-- Update this roadmap and relevant arc42/specification sections in the same PR.
+### Slice Definition of Done (applies to every slice from Phase C on)
 
-Track four separate evidence states: **implemented**, **automated-tested**, **UI-integrated**, and **real-device-validated**. Never conflate them.
+This replaces the former cross-cutting "Phase 7". Each slice PR must show:
+
+- [ ] The capability is reachable in the running desktop app with real state and typed error feedback; no mock success state.
+- [ ] Not-yet-implemented controls are visibly disabled with an explanation; no dead buttons or fake selectors.
+- [ ] The composition root is the only place constructing the new adapter; no UI-to-adapter shortcut, no service locator (verified by `check-architecture.py` and review).
+- [ ] No capture, encoding, enumeration, or filesystem work on the UI thread (verified by code review of every new UI callback and a UI responsiveness check in the manual procedure).
+- [ ] The adapter passes the shared port contract suite (see Phase A).
+- [ ] Traceability rows for the slice are updated; manual UI test procedure is written down; an evidence record exists for each OS/device combination claimed.
+- [ ] Previously working UI flows still pass their procedures (regression).
+- [ ] arc42, this roadmap, and affected ADRs are updated in the same PR.
 
 ## Delivery rules applying to every phase
 
 1. Keep the domain model, ubiquitous language, invariants, and application use cases in the core. Define ports in application-owned code.
-2. Apply DDD pragmatically: identify entities/value objects and aggregate boundaries from real invariants; keep domain logic framework-free; introduce domain events and bounded contexts only when justified.
-3. Implement platform, UI, media, and storage integrations as adapters. The desktop executable is the only composition root and injects adapter implementations.
+2. Apply DDD pragmatically: identify entities/value objects and aggregate boundaries from real invariants; keep domain logic framework-free.
+3. Implement platform, UI, media, and storage integrations as adapters. The desktop executable is the only composition root.
 4. Core must not depend on Slint, CPAL, PipeWire, OS APIs, codecs, muxers, or filesystem implementation types. No adapter-to-adapter coupling.
 5. No first-party `unsafe`, raw pointers, custom FFI, unbounded media queues, or blocking UI/audio callbacks.
 6. Translate external types/errors at adapter boundaries. Use typed errors and owned data across asynchronous boundaries.
-7. Test domain invariants and aggregate behavior directly; test core use cases with fakes; adapter contracts independently; platform behavior on real supported OS/device combinations.
+7. Test domain invariants directly; test use cases with fakes; test adapters against the shared contract suite; test platform behavior on real devices.
 8. Update the relevant arc42 sections and add an ADR for significant decisions in the same PR.
 9. Do not claim a platform, mode, or backend as supported until its real-device and packaging gates pass.
 
@@ -40,194 +70,201 @@ Track four separate evidence states: **implemented**, **automated-tested**, **UI
 
 | Phase | Scope | Status | Depends on |
 |---|---|---|---|
-| 0 | Architecture baseline, capture contracts, bounded audio worker transport | Complete — PR #12 | — |
-| 1 | Core use cases, inbound/outbound ports, recording session orchestration | Implemented — PR #13 merged; hosted CI validation tracked independently | 0 |
-| 2 | Media pipeline evaluation and backend decision | In progress — bounded producer/consumer queue and native EOS/sink/timeout validation implemented; backend decision recorded as continued deferral; independent playback, hardware, packaging and license evidence remain open | 0, 1 (port requirements) |
-| 3 | Transactional local storage adapter and recovery contract | In progress — filesystem adapter slice merged in PR #16; failure-injection and durability gates remain open | 1 |
-| 4 | Microphone adapter behind the audio output port | Planned | 1, 2 |
-| 5 | Screen capture adapters: Wayland first, Windows | Planned | 1, 2 |
-| 6 | Camera adapter and screen + camera composition | Planned | 1, 2, 5 |
-| 7 | Desktop composition root and UI integration | Cross-cutting: integrate each capability incrementally; no late big-bang UI phase | 1–6 |
-| 8 | End-to-end hardening, performance, packaging and release gates | Planned | 3–7 |
+| — | Foundation (former Phases 0, 1, Phase 2 PoC work, Phase 3 adapter slice) | Delivered; formal verification folded into Phase A | — |
+| A | Core consolidation: port-based orchestration, timeline model, data-plane and storage/media hand-off contracts, contract test suites, traceability tooling | In progress — port-based orchestration delivered (ADR-0017) | — |
+| B | Risk spikes with Go/No-Go: Windows capture (safe), webcam, encoder/licence matrix | Planned | — (parallel to A) |
+| C | Walking skeleton: microphone → WAV (interim) → storage → UI; settings and output directory | Planned | A |
+| D | Provisional media backend; microphone → M4A/AAC; packaging pipeline starts | Planned | B, C |
+| E | Screen capture slices: E1 Wayland, E2 Windows | Planned | D (E2 also B1 = Go) |
+| F | Webcam-only slice with preview | Planned | D, B2 = Go |
+| G | Screen + webcam composition (picture-in-picture) | Planned | E, F |
+| H | Hardening, measurement, production backend approval, release | Planned | C–G |
 
-Phases may be delivered as smaller PRs. Parallel work is allowed only where the port contracts and dependencies are already stable. Phase 7 is not a deferred integration bucket: the composition root and UI are extended alongside Phases 4–6 so each finished capability can be tried immediately.
+Cross-cutting from Phase D on: the packaging pipeline (CI-built installable artifacts for Windows and Linux) runs on every PR that changes native dependencies, so packaging risk is visible long before Phase H.
 
-## Phase 0 — Architecture baseline and transport contracts
+Parallel work is allowed only where the port contracts it depends on are stable (Phase A deliverables A2–A4 for any adapter work).
 
-**Current PR: #12**
+## Foundation — delivered before re-sequencing
 
-Deliverables:
-- Backend-neutral owned audio/video data contracts and validation.
-- Bounded worker-level audio block FIFO with explicit full-queue rejection.
-- Callback/worker separation: callback-facing preallocated SPSC ring remains separate.
-- Binding hexagonal architecture and DDD rules, ubiquitous language, initial Recording bounded context, and arc42 documentation policy.
-- This implementation roadmap and ADR trail.
+What exists and stays valid:
 
-Exit criteria:
-- [ ] PR checks pass on Linux and Windows plus dependency audits.
-- [ ] Unit tests cover block validation, queue bounds, FIFO behavior, format mismatch, and overflow accounting.
-- [ ] No first-party unsafe code or new unreviewed dependencies.
-- [ ] All 12 arc42 sections remain present and current.
-- [ ] Contributor instructions enforce ports-and-adapters and DDD for every feature.
-- [ ] Domain vocabulary and initial Recording model are documented; domain invariants remain independent of adapters.
+- Backend-neutral owned audio/video contracts, bounded worker-level audio FIFO (former Phase 0, PR #12).
+- Recording aggregate, inbound use-case port, granular outbound ports (former Phase 1, PR #13).
+- Isolated GStreamer PoC with bounded producer queue, EOS, filesink-error and timeout tests (PRs #14, #15, #18; ADR-0013, ADR-0015).
+- Isolated Wayland portal/PipeWire PoC and CPAL microphone PoC including WAV writer (PRs #6–#11).
+- Transactional filesystem storage adapter with fault-injection seam; desktop recovery scan (PRs #16, #17, #22, #26; ADR-0014).
 
-## Phase 1 — Core use cases and ports
+The former Phase 0 and Phase 1 exit checklists were never linked to evidence (Phase 0 was marked complete with no criterion checked). Their verification is part of Phase A criterion A-V1 rather than being re-ticked retroactively. Open items from former Phases 2 and 3 are re-assigned below:
 
-**PR #13 merged:** completes the core contract and orchestration slice for Phase 1. Production adapters and durable media storage remain later phases; the session repository contract is defined here, while its durable adapter is intentionally deferred.
+| Former open item | New home |
+|---|---|
+| Independent-player playback, target-format validation | D (provisional, Linux + Windows smoke), H (full matrix) |
+| Encoder-specific errors, interruption, incomplete-output cleanup | D |
+| Sustained overload, control-path independence, measurements | D (first measurements), H (targets) |
+| Native plugin inventory and redistribution licences | B3 (matrix), D (provisional profile), H (production approval) |
+| Native output-directory selection | C2 |
+| Desktop/media integration and closed-writer hand-off | A4 (contract), D (implementation) |
+| Real-filesystem fault runs, durability and power-loss | H |
 
-Deliverables:
-- Define application-owned inbound port/use cases for prepare, start, pause, resume, stop, cancel, and state query; define event publication and coalesced metrics snapshot contracts as outbound ports.
-- Define separate outbound ports for screen, camera, microphone, media pipeline, storage, monotonic clock, settings, session metadata repository, event publication, and metrics snapshots.
-- Introduce a Recording session aggregate with explicit identity, configuration, lifecycle state, cancellation, finalization outcome, and artifact publication only after successful finalization.
-- Make the core lifecycle authoritative; adapters report facts and never decide application state. Publish typed lifecycle/source-loss events and expose coalesced metrics snapshots.
-- Add fake resource adapters and deterministic tests for legal/illegal transitions, cancellation, orchestration order, duplicate session identity, and finalization failures. Keep device-loss outcomes typed at the source-port boundary.
+## Phase A — Core consolidation
 
-Exit criteria:
-- [x] Core has no concrete UI, OS, capture, media, or filesystem dependency.
-- [x] Recording aggregate owns lifecycle transitions and rejects illegal operations.
-- [x] Configuration invariants prevent optional microphone duplication in microphone-only mode.
-- [x] Finalized artifact is exposed only after successful resource finalization.
-- [x] Application use cases are defined by an inbound port and depend on core-owned outbound contracts.
-- [x] Use cases can be exercised without hardware or native media runtimes.
-- [x] Every port has a documented ownership, threading, error, cancellation, and shutdown contract in its API documentation.
-- [x] Core dependency boundary is explicit: only the backend-neutral capture-contract crate is a direct dependency; adapters depend inward on core ports.
-- [x] arc42 sections 4–6 and relevant ADRs updated.
-
-## Phase 2 — Media pipeline evaluation and decision
-
-**Merged baseline:** PR #14 introduced the isolated GStreamer dual-stream PoC; PR #15 added repeatable model tests and the real Linux EOS integration baseline.
-
-**This implementation slice:** adds a fixed-capacity producer-to-pipeline-worker queue, non-blocking producer sends, counted video drop-newest, fatal audio overload, queue metrics, concurrent queue tests, sink-error and EOS-timeout integration tests. It records the candidate comparison and continued backend deferral in [ADR-0015](adr/ADR-0015-media-backend-evaluation-decision.md). GStreamer remains outside the production workspace.
+**Goal:** the core contracts that every adapter will build on are complete, typed, and testable, so no adapter is written against a contract that will change.
 
 Deliverables:
-- Compare GStreamer, FFmpeg Rust bindings, and pure-Rust candidates against safe API boundaries, Windows/Linux availability, codec/container coverage, native footprint, licensing, packaging, and offline operation. The current evidence supports continued deferral, not production selection.
-- Keep the synthetic VP8/Vorbis-to-Matroska pipeline isolated. It is a diagnostic format, not approval of the final MP4/H.264/AAC profile.
-- Maintain hardware-free reference tests for per-stream timestamps, sequence continuity, audio sample positions, queue capacity, and terminal states.
-- Exercise the real GStreamer pipeline in Linux CI for pipeline-wide EOS, non-empty output, filesink failure, and bounded EOS timeout. Encoder-specific injection, process interruption, and crash recovery remain external gates.
-- Use a real fixed-capacity producer/consumer channel between synthetic producer and pipeline worker. Producer sends are non-blocking; video overload is counted and dropped, audio overload fails explicitly, and queue high-water/rejection metrics are surfaced.
-- Keep all media work off UI and real-time callback threads. The terminal marker is control data and is retried on the synthetic worker; production control-path independence still requires sustained-load validation.
-- Record CPU/RSS/startup/throughput/A/V drift/stop-to-finalize measurements only from documented hardware/software runs; queue counters are emitted by the PoC but do not substitute for those measurements.
-- Keep the native runtime/plugin inventory and exact redistribution review open until a concrete production profile is proposed.
+- **A1 — Port-based orchestration (delivered in this PR, ADR-0017).** `RecordingApplication` coordinates the aggregate exclusively through the granular ports (`RecordingStoragePort`, `MediaPipelinePort`, screen/camera/microphone capture ports, `RecordingEventPublisher`). The former `RecordingResources` facade and its `String` errors are removed. Failures are typed (`CapabilityFailure { capability, error: PortError }`), rollback failures are reported rather than swallowed, capture ports are optional so a build can offer only implemented capabilities, and source selection must match the configuration exactly (domain invariant).
+- **A2 — Recording timeline model.** Domain value objects for the common origin T0, pause segments, and the mapping from source monotonic timestamps to presentation timestamps (paused duration removed), using the `MonotonicClock` port. Discontinuity and regression detection produce typed domain facts.
+- **A3 — Data-plane contract.** How owned `VideoFrame`/`AudioBlock` values travel from capture adapters to the media pipeline without adapter-to-adapter coupling (for example core-owned bounded sink handles passed at start), including per-stream overload policy (video: counted drop; audio: explicit discontinuity) and the `SourceLost` event path. Recorded as an ADR.
+- **A4 — Storage/media hand-off contract.** How the media pipeline receives its output target from the storage reservation and signals a closed writer before `publish`, without the composition root reaching into concrete adapter methods. Recorded as an ADR; `MediaPipelinePort::prepare` and `RecordingStoragePort` are adjusted accordingly.
+- **A5 — Shared port contract suites.** Reusable, adapter-agnostic test functions per port (lifecycle order, idempotent stop/abort, error mapping, no publication before close) that both the fakes and every real adapter must pass. The storage adapter is the first real adapter to run them.
+- **A6 — Remaining ports wired.** `RecordingSessionRepository`, `RecordingSettingsPort`, `RecordingMetricsPort`, and `MonotonicClock` are either used by a use case or explicitly documented as not yet consumed, with the consuming phase named.
+- **A7 — Verification tooling.** `scripts/check-traceability.py` in CI; requirement IDs added to the traceability matrix for all of SPECIFICATION.md; mutation-testing tool reviewed per the dependency policy and run on `framelet-core`.
 
-Exit criteria:
-- [ ] Representative sample recordings play in at least two independent players on each tested OS.
-- [ ] Output target formats are validated separately; diagnostic Matroska/VP8/Vorbis does not approve MP4/H.264/AAC.
-- [x] Reference-model tests cover per-stream timestamp ordering, contiguous sequence numbers, audio sample-position continuity, queue-model bounds and terminal-state combinations; these do not count as pipeline integration evidence.
-- [x] Linux CI integration test verifies real synthetic audio/video pipeline EOS and non-empty output.
-- [ ] GStreamer integration tests verify encoder-specific errors, interruption and incomplete-output cleanup; filesink error and bounded EOS timeout are covered.
-- [x] A fixed-capacity producer/consumer queue is used by the PoC; producer sends are non-blocking, video drops are counted, audio overload fails explicitly, and concurrent producer/full-queue behavior is tested.
-- [ ] Sustained overload, long-run audio-gap handling, and control-path independence are verified under representative load.
-- [ ] Exact dependency/native plugin inventory and redistribution licenses are reviewed for a proposed production profile.
-- [x] No unsafe code is introduced into first-party crates; the PoC crate forbids unsafe code.
-- [x] Candidate comparison and continued defer decision are recorded in ADR-0015 and arc42 sections 5, 7, 8, 9, and 11.
-- [ ] Measured CPU, process RSS, startup, throughput, queue high-water marks, A/V drift and stop-to-finalize latency are recorded with hardware/software context.
+Exit criteria and proof:
 
+| ID | Criterion | Proof (must exist and pass) |
+|---|---|---|
+| A-1 | No use case depends on a facade or `String` error; every outbound interaction goes through a granular port | [x] `RecordingResources` removed; `crates/core/src/application.rs`; `check-architecture.py`; review |
+| A-2 | Orchestration order is specified and tested for every lifecycle path | [x] `application_tests.rs`: `full_lifecycle_orchestrates_ports_in_order_and_publishes_only_after_finalization`, `each_mode_starts_exactly_its_required_sources` |
+| A-3 | Every failure path ends in a defined state, releases resources, never exposes an artifact, and reports secondary failures | [x] `publication_failure_…`, `drain_failure_…`, `capture_stop_failure_…`, `capture_start_failure_…`, `rollback_failures_are_reported_not_swallowed`, `pipeline_prepare_failure_…`, `cancel_with_cleanup_failure_…` |
+| A-4 | Illegal commands never reach a port | [x] `illegal_commands_never_reach_a_port` |
+| A-5 | Lifecycle transition table is exhaustively enforced | [x] `domain::tests::transition_table_is_exhaustively_enforced` (all 81 state pairs) |
+| A-6 | Timeline mapping is correct for arbitrary pause/resume sequences, never overflows, and detects regressions | [ ] Property-based or exhaustive table tests over generated pause sequences; checked arithmetic at boundaries (`u64::MAX`, zero-length pauses) |
+| A-7 | Data-plane and hand-off contracts are complete | [ ] ADRs for A3/A4 accepted; contract suites cover overload, source loss, closed-writer hand-off |
+| A-8 | Fakes and real adapters agree | [ ] Storage adapter and all fakes pass the A5 contract suites in CI |
+| A-9 | Tests are strong enough | [ ] Mutation run on `framelet-core`: zero surviving mutants, or each survivor justified in the evidence record |
+| A-10 | Completeness is machine-checked | [ ] `check-traceability.py` runs in CI; every SPECIFICATION.md requirement has an ID and a phase |
+| A-V1 | Foundation verified | [ ] Link to a green `main` CI run (Linux + Windows, audits) recorded in `docs/verification/evidence/` |
 
-## Phase 3 — Transactional local storage
+## Phase B — Risk spikes (Go/No-Go)
 
-**Merged slice:** PR #16 introduces the isolated filesystem adapter for `RecordingStoragePort`; see [ADR-0014](adr/ADR-0014-transactional-filesystem-storage.md) and `crates/storage/README.md`. The filesystem adapter is now instantiated by the desktop composition root for output-directory validation and non-destructive orphan discovery. The UI displays the default directory and recovery scan results; native directory selection remains open because no cross-platform dialog adapter has been approved. This does not approve a production media backend.
+**Goal:** retire the three unknowns that can invalidate the product scope before effort is invested in slices that depend on them. Each spike is time-boxed (target: one to two weeks of effort), lives under `poc/`, and ends with an ADR stating **Go**, **No-Go**, or **Go with scope change**.
 
-Deliverables:
-- Storage port and filesystem adapter for exclusive temporary output, collision-safe destination naming, flush/close, no-replace publication, and recovery discovery.
-- Explicit behavior for disk full, permission errors, path invalidation, process interruption, and existing files.
-- No overwrite by default; no success before finalization and close.
-- Media writer integration and composition remain blocked on a production media decision and are not claimed by this slice. The prepare-recording action remains visibly disabled until a real media backend and capture path are integrated.
+- **B1 — Windows screen capture without first-party unsafe.** Most `windows`-crate COM/WinRT calls are `unsafe fn`, so Windows Graphics Capture must come through a reviewed wrapper that exposes a safe API. Prototype display and window capture, user-mediated picker, frame delivery into owned `VideoFrame`s, stop/release. If no safe wrapper is viable, the ADR must state the consequence for Windows support (AGENTS.md: stop and explain, never work around).
+- **B2 — Webcam.** Enumerate cameras, negotiate formats, deliver owned frames, and handle unplug on Windows and Linux with nokhwa and at least one alternative (for example a PipeWire camera portal on Linux).
+- **B3 — Encoder and licence matrix.** For MP4/H.264/AAC and at least one royalty-free alternative (for example WebM/VP9/Opus), list per OS which encoders are available (OS-provided such as Media Foundation via the media runtime, OpenH264, x264, FDK/AAC alternatives), their licences, patent and redistribution implications, and packaging footprint. The result may change the default output format in SPECIFICATION.md §4.5/§6.3 — that is the point of doing it early.
 
-Exit criteria:
-- [ ] Fault-injected tests cover write, flush, close, publication, and disk-full failures on supported filesystems.
-  - Note: adapter-level fault-injection coverage exists in `crates/storage` (a private `FileOperations` seam injects StorageFull/PermissionDenied/NotFound/other errors into create, flush, sync, close, hard-link, remove, and directory scan; see ADR-0014). Media-writer `write` failures belong to the not-yet-selected media adapter. Real-filesystem runs on NTFS, ext4, and btrfs (including genuine disk-full) remain open, so this box stays unchecked.
-- [x] Existing recordings are never silently overwritten by the adapter's no-replace publication strategy.
-- [x] Recovery discovery reports orphaned candidates without destructive cleanup.
-- [x] Core depends only on the storage port; the adapter depends inward on core.
-- [x] Desktop composition root uses the storage adapter to validate the default output path and run non-destructive orphan discovery; the UI displays results.
-- [ ] Native output-directory selection is implemented through an approved cross-platform dialog adapter.
-- [ ] Desktop/media integration and closed-writer hand-off are verified.
-- [ ] Filesystem durability and real power-loss recovery are validated on supported OS/filesystems.
+Exit criteria and proof:
 
-## Phase 4 — Production microphone adapter and first usable UI slice
+| ID | Criterion | Proof |
+|---|---|---|
+| B-1 | Each spike has a decision | [ ] One ADR per spike with Go/No-Go and the evidence it relied on |
+| B-2 | Decisions rest on real execution, not documentation | [ ] Evidence record per spike and OS: commit SHA, OS build, hardware, device model, commands, observed output (frame count, formats, errors) |
+| B-3 | Safety constraint holds | [ ] Spike crates `forbid(unsafe_code)`; dependency review (licence, advisories, unsafe/FFI surface) documented per AGENTS.md dependency policy |
+| B-4 | Failure modes observed, not assumed | [ ] Each spike's evidence includes cancel/deny and disconnect behaviour |
+| B-5 | Consequences propagated | [ ] If any spike is No-Go or changes scope, SPECIFICATION.md, this roadmap, and the traceability matrix are updated in the same PR |
 
-This phase must end with microphone-only capture and optional microphone input selectable and exercisable from the running desktop application on each validated platform. The microphone selector must not be a decorative placeholder.
+## Phase C — Walking skeleton
+
+**Goal:** a user can record something real from the desktop app end to end, so the lifecycle, finalization, storage, recovery, and non-blocking UI are proven with real data before the media backend is chosen.
 
 Deliverables:
-- Promote the isolated CPAL evaluation only after dependency/security review and real-device tests.
-- Implement the core-owned microphone port as an outbound adapter.
-- Enumerate and select devices explicitly; negotiate sample formats/rate/channels; handle unplug, permission/device errors, and stream shutdown.
-- Keep callback work bounded and non-blocking. Use the preallocated SPSC ring in callback context; drain and normalize on a worker; publish AudioBlocks through the bounded worker queue.
-- Propagate overrun/discontinuity as typed session events and degraded/failed outcomes.
+- **C1 — Microphone → WAV.** Promote the CPAL PoC into a production microphone adapter after dependency review (explicit device selection, format negotiation, callback → SPSC ring → worker → bounded queue). An interim WAV media adapter implements `MediaPipelinePort` using the A3/A4 contracts. The UI labels WAV explicitly as an interim format. Start, pause, resume, stop, and cancel work from the UI; the completed path is shown only after publication.
+- **C2 — Settings and output directory.** TOML settings adapter behind `RecordingSettingsPort` (validated, malformed files handled safely); output directory selection through a reviewed native dialog adapter; recovery scan uses the selected directory.
 
-Exit criteria:
-- [ ] Linux ALSA/PipeWire and Windows WASAPI device tests pass on documented hardware.
-- [ ] Format negotiation and conversion are explicit; unsupported formats fail clearly.
-- [ ] Long-run audio continuity, timestamps, overrun and device-loss tests pass.
-- [ ] Callback performs no allocation, blocking, I/O, logging, or encoding.
-- [ ] Adapter conforms to core port tests and does not expose CPAL types.
+Exit criteria and proof:
 
-## Phase 5 — Screen capture adapters and UI slice
+| ID | Criterion | Proof |
+|---|---|---|
+| C-1 | Slice Definition of Done met | [ ] Checklist above, linked in the slice PR |
+| C-2 | Output is a valid, complete file whose duration matches the recording minus pauses | [ ] Automated test with a synthetic microphone fake: WAV header/sample count matches the timeline model (A2) within one block; real recording inspected with `ffprobe` or `soxi` in the evidence record |
+| C-3 | No silent audio loss | [ ] Test forcing ring/queue overflow yields a typed discontinuity event and a degraded/failed outcome, never Completed-without-warning |
+| C-4 | Callback is real-time safe | [ ] Code review checklist for the callback (no allocation, lock, I/O, logging); test counting allocations in the callback path, or documented static argument if not measurable |
+| C-5 | Device loss is handled | [ ] Evidence record: unplug during recording on Linux and Windows → typed `SourceLost`, safe stop, recoverable output |
+| C-6 | Real-device validation | [ ] Evidence records for the reference matrix entries claimed (at least one Linux Wayland and one Windows machine) using the C1 manual procedure, 10-minute standard run |
+| C-7 | Settings are robust | [ ] Tests for missing, malformed, out-of-range, and unwritable settings files |
 
-This phase must end with OS-mediated display/window selection and screen capture accessible from the running desktop application. Preserve the already-working microphone UI path.
+## Phase D — Provisional media backend
 
-Deliverables:
-- Wayland adapter using user-mediated XDG Desktop Portal selection and PipeWire stream; retain a safe API boundary and explicit session ownership.
-- Windows adapter using user-mediated Windows capture APIs through a reviewed safe wrapper.
-- Source enumeration/selection, capabilities, frame timestamps, stride/format validation, cancellation, session closure, and disconnect handling.
-- X11 remains a separate optional future decision; do not imply support.
-
-Exit criteria:
-- [ ] Real KDE and GNOME Wayland tests pass.
-- [ ] Windows 10/11 display/window capture tests pass.
-- [ ] User cancellation and permission denial are distinct outcomes.
-- [ ] Frame buffers are owned/validated; queues bounded; drops counted.
-- [ ] No bypass of OS permission model and no first-party unsafe code.
-
-## Phase 6 — Camera, picture-in-picture and UI slice
-
-This phase must end with webcam-only and screen-plus-webcam modes accessible from the running desktop application. Preserve the microphone and screen paths.
+**Goal:** select a media backend provisionally (ADR-0018 stage 1) and ship microphone recording in the target audio format. The decision stays reversible because only one adapter crate depends on the backend.
 
 Deliverables:
-- Camera port adapter with explicit device/format negotiation and hot-unplug handling.
-- Composition stage places camera frames into screen frames according to a deterministic layout contract.
-- Timestamp alignment, resize/color conversion, and bounded buffering are explicit.
-- No camera framework types cross the port.
+- Provisional backend ADR based on the B3 matrix and existing PoC evidence; the backend is used only in a `media-*` adapter crate.
+- Microphone → M4A/AAC (or the format chosen in B3) replacing the interim WAV path; WAV may remain as a diagnostic option only if documented.
+- Encoder-specific error injection, process interruption, and incomplete-output cleanup tests.
+- First measurements (CPU, RSS, start latency, stop-to-finalize) on the reference machines.
+- Packaging pipeline: CI builds installable Windows and Linux artifacts including the backend's native runtime and an explicit plugin allowlist; clean-machine smoke install.
 
-Exit criteria:
-- [ ] Webcam-only and screen + webcam modes work on each claimed OS.
-- [ ] Device loss and unsupported formats are handled visibly.
-- [ ] PIP layout and A/V synchronization pass integration tests.
-- [ ] Resource use remains bounded during long sessions.
+Exit criteria and proof:
 
-## Phase 7 — Continuous desktop composition and UI integration
+| ID | Criterion | Proof |
+|---|---|---|
+| D-1 | Provisional selection is justified and reversible | [ ] ADR with exact versions, plugin set, licences; `check-architecture.py` proves only the adapter crate depends on the backend |
+| D-2 | Output plays and is well-formed | [ ] Automated `ffprobe`-style inspection in CI of a synthetic recording (container, codec, duration, stream count); evidence records of playback in two independent players per OS |
+| D-3 | Failures never produce false success | [ ] Integration tests: encoder error, sink error, EOS timeout, killed process → no Completed state, candidate kept for recovery |
+| D-4 | Backpressure is bounded under sustained load | [ ] Stress test with a slow consumer: queue high-water ≤ capacity, video drops counted, audio discontinuity explicit, control commands (stop) still processed within a stated bound |
+| D-5 | Packaging works on clean machines | [ ] Evidence record of installing and recording on a clean Windows VM and a clean Linux VM without manually installed runtimes |
+| D-6 | Measurements recorded | [ ] Evidence record with hardware/software context; deviations from SPECIFICATION.md §8 targets listed, not hidden |
 
-This is a cross-cutting activity, not a final integration phase. It starts with the first user-visible slice and continues in every subsequent PR.
+## Phase E — Screen capture slices
 
-Deliverables:
-- Desktop executable constructs and injects each newly implemented adapter into core use cases as soon as its contracts and evidence gates permit.
-- Slint UI acts only as an inbound adapter: typed user commands in, state/progress/events out.
-- Every completed capability is immediately accessible from the running app; incomplete capabilities are explicitly unavailable rather than represented by non-functional controls.
-- UI remains responsive; no capture, encoding, or filesystem work on UI thread.
-- Preferences are validated and stored through a settings port.
-
-Exit criteria:
-- [ ] No UI-to-concrete-adapter shortcuts.
-- [ ] No global service locator or concrete backend construction in core.
-- [ ] Every completed capability has an end-to-end UI path and manual test procedure.
-- [ ] UI distinguishes implemented, automated-tested, UI-integrated, and real-device-validated.
-- [ ] Accessibility, cancellation, error states, and progress are covered by UI tests.
-
-## Phase 8 — End-to-end hardening and release
+**Goal:** OS-mediated screen/window recording from the desktop app, Wayland first (E1), then Windows (E2, only if B1 = Go). Microphone paths must keep working.
 
 Deliverables:
-- Full scenario matrix for four modes, optional microphone, pause/resume/stop/cancel, unplug, disk-full, permission denial, and recovery.
-- Long-duration and stress tests for memory, queue occupancy, audio continuity, sync drift, CPU, and stop-to-finalize latency.
-- Offline/network observation and privacy review.
-- Reproducible Windows/Linux packaging, clean-machine installation tests, dependency and license audits, release notes.
+- E1: production Wayland adapter (XDG Desktop Portal selection, PipeWire stream), promoted from the PoC after dependency review.
+- E2: production Windows Graphics Capture adapter through the wrapper approved in B1.
+- Source selection, capability reporting, stride/format validation, cancellation vs. denial, disconnect handling, bounded frame queues with counted drops.
+- X11 remains out of scope until a separate decision.
 
-Exit criteria:
-- [ ] Every advertised OS/mode has real-device evidence.
-- [ ] No false success on incomplete or corrupted output.
-- [ ] Resource and performance targets are measured and documented with hardware/software context.
-- [ ] Security/dependency audit passes.
-- [ ] arc42 and ADRs match shipped behavior; unsupported capabilities are explicitly listed.
+Exit criteria and proof:
+
+| ID | Criterion | Proof |
+|---|---|---|
+| E-1 | Slice Definition of Done met | [ ] Checklist linked in each slice PR |
+| E-2 | Frame validation is total | [ ] Tests for zero/oversized dimensions, short buffers, stride mismatch, unsupported formats, arithmetic overflow; fuzz or property tests on the conversion function |
+| E-3 | Cancel and deny are distinct | [ ] Adapter contract test with scripted portal/OS responses; evidence record of both on real desktops |
+| E-4 | A/V sync with microphone | [ ] Evidence record: clap/flash test or timecode overlay, measured offset < 100 ms at start and end of a 10-minute recording |
+| E-5 | Real platforms | [ ] E1: evidence records for GNOME and KDE Wayland; E2: Windows 10 and 11; display and window capture each |
+| E-6 | No permission bypass, no first-party unsafe | [ ] Review; `check-architecture.py`; dependency review record |
+
+## Phase F — Webcam slice
+
+**Goal:** webcam-only recording with live preview (SPECIFICATION.md §4.2 step 5) from the desktop app. Independent of screen capture.
+
+Exit criteria and proof:
+
+| ID | Criterion | Proof |
+|---|---|---|
+| F-1 | Slice Definition of Done met | [ ] Checklist linked |
+| F-2 | Format negotiation is explicit | [ ] Tests: device offers no supported format → typed `UnsupportedFormat`; the UI never claims a setting the device cannot deliver |
+| F-3 | Preview does not block UI or recording | [ ] Preview frames go through a bounded, drop-oldest preview path; UI responsiveness check in the manual procedure |
+| F-4 | Hot-unplug | [ ] Evidence record per OS: unplug during preview and during recording |
+| F-5 | Real platforms | [ ] Evidence records for one UVC USB and one built-in camera per claimed OS |
+
+## Phase G — Screen + webcam composition
+
+**Goal:** picture-in-picture recording per SPECIFICATION.md §4.4.
+
+Exit criteria and proof:
+
+| ID | Criterion | Proof |
+|---|---|---|
+| G-1 | Layout is deterministic | [ ] Golden-frame tests: for each corner × size, synthetic screen and camera frames produce a pixel-exact (or tolerance-bounded) expected composition; aspect ratio preserved; mirroring affects only the preview |
+| G-2 | Streams stay synchronized | [ ] Synthetic timeline test with differing frame rates; evidence record with a 30-minute run measuring drift |
+| G-3 | Resource use bounded | [ ] Long-run evidence (60 minutes): RSS slope ≈ 0, queue high-water ≤ capacity |
+| G-4 | All four modes coexist | [ ] Regression procedures for screen, microphone, webcam, and screen + webcam all pass in the same build |
+
+## Phase H — Hardening and release
+
+**Goal:** the MVP Definition of Done (SPECIFICATION.md §12) holds on every advertised platform, and the media backend is approved for production (ADR-0018 stage 2).
+
+Deliverables:
+- Full scenario matrix: four modes × optional microphone × pause/resume/stop/cancel × unplug, disk full, permission denial, crash recovery.
+- Long-duration and stress runs; final measurements against SPECIFICATION.md §8.
+- Real-filesystem fault and power-loss runs on NTFS, ext4, btrfs.
+- Offline/network observation and privacy review; X11 tested or explicitly marked unsupported.
+- Production backend approval ADR; reproducible, verified packages; release notes listing unsupported capabilities.
+
+Exit criteria and proof:
+
+| ID | Criterion | Proof |
+|---|---|---|
+| H-1 | Every advertised OS/mode has real-device evidence | [ ] Traceability matrix: no row assigned to the MVP is below *real-device-validated* where the row requires it |
+| H-2 | No false success | [ ] Fault matrix results in evidence records; every injected failure ends Failed or degraded with a visible message |
+| H-3 | Offline and private | [ ] Evidence record of a full recording with network disabled and a network trace showing no connection attempts; log review shows no captured content |
+| H-4 | Targets measured | [ ] Measurement evidence with hardware/software context; misses documented |
+| H-5 | Supply chain reviewed | [ ] `cargo audit`, `cargo deny`, `cargo vet` pass; native runtime/plugin inventory with licences published |
+| H-6 | Docs match shipped behaviour | [ ] arc42, ADRs, SPECIFICATION.md and README reviewed against the release build; unsupported list present |
 
 ## Change control
 
-A phase may be split, reordered, or deferred only with documented evidence. If the change alters dependency direction, lifecycle ownership, trust boundaries, media time model, backend selection, or platform support, create a new ADR and update arc42 before or alongside implementation. The hexagonal dependency rule and 12-section arc42 requirement cannot be waived by phase planning.
+A phase may be split, reordered, or deferred only with documented evidence. If the change alters dependency direction, lifecycle ownership, trust boundaries, media time model, backend selection, or platform support, create a new ADR and update arc42 before or alongside implementation. The hexagonal dependency rule, the 12-section arc42 requirement, and the proof requirement for exit criteria cannot be waived by phase planning.

@@ -54,7 +54,7 @@ Record OS release, hardware, runtime version, plugins, Rust version, build type 
 
 ## Architecture guardrails
 
-- This package must stay outside the production workspace until a Phase 2 ADR explicitly approves an implementation path.
+- This package must stay outside the production workspace until a provisional backend ADR (roadmap Phase D, ADR-0018) explicitly approves an implementation path.
 - Only `framelet-capture-api` owned values enter the PoC. No GStreamer types may appear in `framelet-core` or any core-owned port.
 - First-party source uses `#![forbid(unsafe_code)]`; never add FFI or unsafe glue to make the PoC work.
 - Capture, encoding and file I/O stay outside the UI thread and device callbacks.

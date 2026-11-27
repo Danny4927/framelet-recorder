@@ -415,17 +415,9 @@ MVP is complete only when all four modes produce valid local files, the app work
 
 ## 11. Implementation sequence
 
-1. **Capture PoC:** independently verify screen, microphone, and webcam capture on Windows and Linux.
-2. **Pipeline PoC:** combine sources, synchronize, encode, and finalize files.
-3. **UI shell:** implement compact Slint UI and state display.
-4. **Core integration:** connect modes and recording lifecycle.
-5. **Storage hardening:** safe temp files, collision handling, recovery.
-6. **Platform validation:** Wayland and X11 are tested separately.
-7. **Security review:** dependencies, unsafe audit, native plugins, permissions.
-8. **Performance review:** idle, 1080p recording, long-duration memory and sync.
-9. **Packaging:** signed/verified Windows artifacts and Linux packages.
+The binding implementation order, phase dependencies, exit criteria, and their proofs are defined in [docs/architecture/implementation-roadmap.md](docs/architecture/implementation-roadmap.md); how completeness and correctness are proven is defined in [docs/verification/README.md](docs/verification/README.md). This specification does not define a separate sequence.
 
-Do not build a polished UI before the capture and media pipeline PoCs have passed.
+The guiding principles of that order are: retire the largest platform and licensing risks first with time-boxed spikes; deliver a real, recordable walking skeleton early instead of a polished UI on top of unproven capture; integrate every finished capability into the running app immediately; validate Wayland and X11 separately; and treat the security, performance, and packaging reviews as gates that start early and close before release.
 
 ---
 

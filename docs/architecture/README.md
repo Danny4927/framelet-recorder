@@ -5,6 +5,7 @@ This directory is the architecture source of truth. Architecture documentation M
 - [arc42 architecture](arc42.md)
 - [Capture and media contracts](capture-and-media-contracts.md)
 - [Implementation roadmap](implementation-roadmap.md)
+- [Verification framework](../verification/README.md) and [traceability matrix](../verification/traceability.md)
 - [ADR index](adr/README.md)
 - [Wayland portal PoC](../../poc/wayland-portal/README.md)
 
@@ -26,4 +27,4 @@ Hexagonal architecture is mandatory across all application capabilities; see [AD
 | arc42 documentation completeness | All 12 sections required; reviewed with every structural change | Binding |
 
 
-**Phase 1 status:** The core now owns the initial Recording aggregate and lifecycle use cases. See the [implementation roadmap](implementation-roadmap.md) for remaining acceptance gates; capture, media and storage adapters are not yet production-wired.
+**Status:** The core owns the Recording aggregate and orchestrates its use cases through the granular ports (ADR-0017). The roadmap was re-sequenced risk-first (ADR-0018); see the [implementation roadmap](implementation-roadmap.md) for phases and the [verification framework](../verification/README.md) for how each exit criterion is proven. Capture and media adapters are not yet production-wired.
