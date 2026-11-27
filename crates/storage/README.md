@@ -22,14 +22,30 @@ The adapter reports `.framelet-pending-*.part` files left by interrupted process
 It never deletes them automatically. Automatic recovery/finalization is deferred
 until a production media-container format and its validation contract are selected.
 
+## Failure handling
+
+All filesystem calls go through the private `FileOperations` seam (`src/fs_ops.rs`);
+tests inject faults through `src/fault.rs`. `close` performs each file's single `sync_all` and then drops the handle,
+so sync and close errors surface. `StorageFull` maps to `PortError::StorageExhausted`; other kinds
+map to `PortError::Failed`.
+
+| Failure | Outcome |
+| --- | --- |
+| `begin` flush/close fails | error; candidate removed; no session |
+| ...and cleanup fails | `StorageExhausted` if the cause was disk-full, else `Failed` naming both causes; candidate reported by orphan scan |
+| `publish` open/close/link fails | error; no final file; existing destination untouched; session abortable |
+| link ok, temp removal fails | error; complete final file visible; retry never overwrites; `abort` cleans up |
+| `abort` removal fails | error; candidate kept; session retained for retry |
+| orphan scan fails | error; nothing deleted |
+
 ## Limitations
 
 - The temporary path is a hand-off seam for the media adapter; `publish` must not
   be called until all media writers are closed.
 - Directory fsync and power-loss durability semantics are platform/filesystem
   dependent and are not yet claimed.
-- Hosted CI does not replace real-device, filesystem fault-injection, or power-loss
-  validation. Reservation cleanup and name-collision regressions are covered by
-  unit tests, but injected flush/sync/link/remove failures remain outstanding.
+- Hosted CI does not replace real-filesystem (NTFS, ext4, btrfs), genuine
+  disk-full, or power-loss validation. Injected failures are covered at the
+  adapter level only (see [Failure handling](#failure-handling)).
 - The desktop composition root is not wired to this adapter yet; the media backend
   decision and later composition phase must provide a compatible pipeline.

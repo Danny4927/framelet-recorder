@@ -158,7 +158,7 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
 | core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
 | Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska; bounded producer/worker queue, counted video drops, fatal audio overload, queue metrics, EOS, filesink-error and timeout tests exist; no production adapter, independent playback proof, sustained-load validation, or hardware benchmark evidence |
-| Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery. Desktop composition validates the default output directory and exposes orphan scans; no production media writer or native directory picker yet |
+| Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery. All filesystem calls pass through a crate-private `FileOperations` seam used for adapter-level fault-injection tests (ADR-0014); real NTFS/ext4/btrfs fault runs remain open. Desktop composition validates the default output directory and exposes orphan scans; no production media writer or native directory picker yet |
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
