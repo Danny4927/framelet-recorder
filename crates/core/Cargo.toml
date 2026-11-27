@@ -8,5 +8,11 @@ license.workspace = true
 [dependencies]
 framelet-capture-api = { path = "../capture-api", version = "0.1.0" }
 
+[features]
+# Exposes `framelet_core::contract`: shared port contract suites and fakes.
+# Enable only from `[dev-dependencies]` of adapter crates (ADR-0021); it adds
+# no dependency and is never part of a production build.
+contract-tests = []
+
 [lints]
 workspace = true

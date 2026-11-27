@@ -102,6 +102,32 @@ def dependency_names(manifest: dict) -> set[str]:
     return names
 
 
+def check_contract_tests_feature() -> None:
+    """The core's contract fakes may only be enabled for tests (ADR-0021).
+
+    A crate may enable ``framelet-core``'s ``contract-tests`` feature in
+    ``[dev-dependencies]`` only, never in ``[dependencies]`` or
+    ``[build-dependencies]``, so fakes cannot reach a production build.
+    """
+    for root in FIRST_PARTY_CRATES:
+        if not root.exists():
+            continue
+        for manifest_path in root.rglob("Cargo.toml"):
+            if "target" in manifest_path.parts:
+                continue
+            manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+            tables = [manifest, *manifest.get("target", {}).values()]
+            for table in tables:
+                for section in ("dependencies", "build-dependencies"):
+                    spec = table.get(section, {}).get("framelet-core")
+                    if isinstance(spec, dict) and "contract-tests" in spec.get("features", []):
+                        fail(
+                            f"{manifest_path.relative_to(ROOT)} enables framelet-core "
+                            f"'contract-tests' in [{section}]; use [dev-dependencies]"
+                        )
+    print("Contract-test fakes are confined to dev-dependencies.")
+
+
 def check_core_boundary() -> None:
     manifest_path = ROOT / "crates/core/Cargo.toml"
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
@@ -120,3 +146,4 @@ def check_core_boundary() -> None:
 if __name__ == "__main__":
     check_first_party_crates()
     check_core_boundary()
+    check_contract_tests_feature()

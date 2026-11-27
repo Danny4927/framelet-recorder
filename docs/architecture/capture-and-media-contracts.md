@@ -1,6 +1,6 @@
 # Capture and media contracts
 
-**Status:** Architecture contract for PoC implementation; transport and format choices remain measurable implementation decisions.
+**Status:** Architecture contract. The capture-to-media data plane (§4.2) and the storage/media hand-off (§7.1) are implemented in `framelet-core` per ADR-0020 and ADR-0021 (both Proposed, awaiting acceptance); queue capacities and formats remain measurable implementation decisions.
 
 This document makes the architecture's media boundary concrete without binding it to a capture library.
 
@@ -50,17 +50,21 @@ Audio timestamps should be mapped from backend stream clock/sample position to t
 
 `framelet-capture-api` provides `AudioBlockQueue`, a bounded FIFO for owned blocks passed between worker threads. It is deliberately not real-time safe: queue methods may allocate and require exclusive mutable access. Never call it inside an audio device callback.
 
-The queue fixes sample rate and channel count at construction and bounds both block count and maximum interleaved samples per block. It rejects mismatched formats, oversized blocks, and non-finite sample values. When full, it rejects the newest block, increments a rejection counter, and retains accepted blocks. The caller must surface `AudioTransportFull` as an explicit overrun/failure.
-
-The CPAL PoC's preallocated SPSC ring remains the callback-facing boundary. A consumer worker drains that ring, creates owned `AudioBlock` values, and then publishes them to the worker-level queue.
-
-### 4.1 Audio worker transport
-
-`framelet-capture-api` provides `AudioBlockQueue`, a bounded FIFO for owned blocks passed between worker threads. It is deliberately not real-time safe: queue methods may allocate and require exclusive mutable access. Never call it inside an audio device callback.
-
 The queue fixes sample rate and channel count at construction and bounds both block count and maximum interleaved samples per block. It rejects mismatched formats, oversized blocks, and non-finite sample values. When full, it rejects the newest block, increments a rejection counter, and retains accepted blocks. The caller must surface `AudioTransportFull` as an explicit overrun/failure; it must not silently retry or discard accepted audio.
 
 The CPAL PoC's preallocated SPSC ring remains the callback-facing boundary. A consumer worker drains that ring, creates owned `AudioBlock` values, and then publishes them to the worker-level queue.
+
+### 4.2 Data plane: core-owned bounded sinks (ADR-0020)
+
+- `MediaPipelinePort::prepare(id, &configuration, &target)` creates one bounded channel per required source with `data_plane::media_inputs`, keeps the `MediaStreams`, and returns `PreparedMedia { session, sinks }`. The core rejects sinks that do not match the configuration.
+- At start the core moves each sink into its capture port: `start(&source, VideoSink)` for screen and camera, `start(&source, AudioSink)` for the microphone. Capture and media adapters never reference each other.
+- `try_send` never blocks. Video: a full queue discards the oldest frame and returns `DroppedStale { dropped_total }`. Audio: a full queue rejects the newest block, keeps all accepted audio, returns `Discontinuity { lost_blocks_total }`, and marks `gap_before` on the next accepted `AudioPacket`. Either returns `Closed` once the consumer released its stream.
+- Capacity is fixed and validated at construction (ceilings 64 frames / 1024 blocks); queue length never exceeds it. `StreamStats` reports capacity, occupancy, high-water mark, accepted, delivered, dropped, lost audio frames, discontinuity episodes, end, and consumer state.
+- Sinks are used on capture workers only; `try_send` takes a short lock and is not callback-safe. Audio callbacks keep the preallocated SPSC ring of §4.1.
+- Before `start`, a pipeline does not consume from its streams (contract suites depend on this). `drain` consumes until every stream has ended; producers are stopped first.
+- **Trailing audio loss (consumer obligation).** Audio rejected after the last accepted block is carried by no packet. After an audio stream returns `Received::Ended`, the media pipeline MUST read the final `stats()` and treat a non-empty `pending_gap` like a marked `AudioGap` (count it, propagate it to the degraded/failed outcome). Ignoring it would be silent audio loss. Contract suite: `media::audio_trailing_loss_is_reported_after_stream_end`.
+- Dropping a sink ends the stream as `Stopped`; `report_source_lost` consumes the sink and ends it as `SourceLost`. Capture `stop` releases the sink before returning and is idempotent; a failed `start` releases it too.
+- The core observes each started source through a `StreamMonitor`; `process_source_losses` and `stop` turn a `SourceLost` end into `RecordingEvent::SourceLost` and the mode-dependent outcome (`RecordingConfiguration::source_loss_outcome`).
 
 ## 5. Time model
 
@@ -82,19 +86,26 @@ Errors are typed and preserve an internal cause for diagnostics. User cancellati
 
 The media pipeline accepts negotiated source configurations and owned blocks. It is responsible for clock mapping, optional camera picture-in-picture composition, explicit frame-rate/pixel-format conversion, encoding/muxing, bounded queue metrics and discontinuity propagation, and draining accepted buffers/finalizing output on Stop.
 
-It reports readiness, progress/metrics, recoverable warnings, and terminal result. Terminal success includes a finalized local path and measured stats. It is impossible to report success before the muxer/container closes successfully.
+On drain it accounts for both marked gaps (`AudioPacket::gap_before`) and the trailing `pending_gap` of each ended audio stream (§4.2). It reports readiness, progress/metrics, recoverable warnings, and terminal result. Terminal success includes a finalized local path and measured stats. It is impossible to report success before the muxer/container closes successfully.
+
+### 7.1 Storage/media hand-off (ADR-0021)
+
+- `RecordingStoragePort::begin` returns `StorageReservation { session: StorageSessionId, target: OutputTarget }`. The core forwards the target unchanged to `MediaPipelinePort::prepare`; the composition root never asks storage for paths.
+- `MediaPipelinePort::close` finalizes the container and returns `ClosedOutput` for its target; the session is released whether or not finalization succeeds. `abort` releases a pipeline without a closed output (cancel/rollback).
+- `RecordingStoragePort::publish(&session, ClosedOutput)` takes the closed output by value; because `ClosedOutput::new` is public, publish-after-close is enforced by contract plus target check, not by the type alone. A closed output for any target other than the session's reservation, or an inactive session, is rejected with `PortError::InvalidInput` before any filesystem call. The core also checks the target before publishing.
+- Storage `abort`, media `abort`, and capture `stop` are idempotent; abort after publish never touches the published recording.
 
 ## 8. Backpressure defaults for PoC
 
 Do not freeze queue sizes in the public API. Measure them under target resolutions and formats. PoC must record queue capacity/peak occupancy; video received/encoded/dropped and reason; audio frames received and gaps/overruns; end-to-end latency; process RSS/CPU; stop-to-finalized latency.
 
-Initial policy: bounded video queue with drop-oldest/stale-frame policy; bounded audio ring buffer with overrun flag and fail/degraded result; independent control channel. Any policy change requires an ADR or update to this contract.
+Initial policy, now implemented by the core data plane (§4.2): bounded video queue with drop-oldest/stale-frame policy; bounded audio queue that rejects the newest block with an explicit gap marker, behind the callback's bounded ring; control and source-loss signalling separate from payloads. The fail/degraded outcome for audio overrun is surfaced in Phase C. Any policy change requires an ADR or update to this contract.
 
 ## 9. Cancellation and resource ownership
 
 - Cancellation is cooperative and idempotent.
 - Dropping a session must release OS/portal/PipeWire resources through the safe library API.
-- Shutdown order: stop producers -> close producer streams -> drain accepted media -> finalize pipeline -> flush/close storage -> publish final path.
+- Shutdown order: stop producers (sinks released) -> check for source loss -> drain accepted media -> close pipeline (`ClosedOutput`) -> publish the closed output (storage flushes, links, never replaces).
 - A timeout or worker panic is a failure with recovery metadata; it is not a completed recording.
 - No adapter may detach an untracked worker thread.
 
@@ -105,7 +116,7 @@ Initial policy: bounded video queue with drop-oldest/stale-frame policy; bounded
 - [ ] Explicit selected/negotiated source and format.
 - [ ] Owned data and validated dimensions/strides/lengths.
 - [ ] Monotonic timestamps and discontinuity reporting.
-- [ ] Bounded buffers and counters.
-- [ ] Device unplug and cancellation tests.
+- [ ] Bounded buffers and counters (core data plane; adapters inherit them by using the sinks).
+- [ ] Device unplug and cancellation tests; passes the shared contract suites in `framelet_core::contract`.
 - [ ] Deterministic stop and resource release.
 - [ ] No network access or media-content logging.

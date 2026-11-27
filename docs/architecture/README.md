@@ -23,7 +23,8 @@ Hexagonal architecture is mandatory across all application capabilities; see [AD
 | No first-party unsafe Rust | Binding constraint |
 | Slint UI | Existing scaffold; retain provisionally |
 | GStreamer, CPAL, nokhwa, PipeWire/Wayland and Windows capture wrappers | Candidates only |
-| Exact frame/audio transport and queue sizing | Open; measure in PoC |
+| Frame/audio transport between capture and media | Core-owned bounded sinks (ADR-0020, Proposed); queue sizing still to be measured |
+| Storage/media hand-off and shared port contract suites | ADR-0021, Proposed |
 | arc42 documentation completeness | All 12 sections required; reviewed with every structural change | Binding |
 
 

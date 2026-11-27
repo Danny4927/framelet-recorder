@@ -7,12 +7,18 @@ or container.
 ## Lifecycle
 
 1. `begin` reserves a unique temporary `.part` file using exclusive creation. If a stale candidate occupies the next generated name, the adapter advances the sequence and retries without truncating the existing file.
-2. The media adapter writes its output to `temporary_path(session)`.
-3. The media pipeline must drain and close its writer before `publish`.
+   It returns a `StorageReservation` whose `OutputTarget` is the candidate path.
+2. The core forwards the target to the media pipeline's `prepare`; the media adapter
+   writes there. Nobody else asks this adapter for paths (ADR-0021).
+3. `publish(session, ClosedOutput)` requires the closed output returned by the media
+   pipeline's `close`. A closed output for any other target, or an inactive session,
+   is rejected with `InvalidInput` before any filesystem call.
 4. `publish` synchronizes the closed candidate and creates the final name with a
    same-filesystem hard link. This gives atomic visibility and fails if the target
    already exists; it never overwrites an existing recording.
-5. `abort` removes only the temporary candidate owned by that session.
+5. `abort` removes only the temporary candidate owned by that session. It is
+   idempotent: aborting an inactive session (already aborted, published, or unknown)
+   succeeds without a filesystem call and never touches a published recording.
 
 Filesystems without hard-link support fail closed. There is no non-atomic fallback.
 
@@ -36,12 +42,21 @@ map to `PortError::Failed`.
 | `publish` open/close/link fails | error; no final file; existing destination untouched; session abortable |
 | link ok, temp removal fails | error; complete final file visible; retry never overwrites; `abort` cleans up |
 | `abort` removal fails | error; candidate kept; session retained for retry |
+| `publish` with a foreign `ClosedOutput` | `InvalidInput`; no filesystem call; both reservations intact |
 | orphan scan fails | error; nothing deleted |
+
+## Contract suites
+
+`tests/contract.rs` runs every shared `RecordingStoragePort` suite from
+`framelet_core::contract::storage` against this adapter in a temporary directory;
+the core's in-memory fake passes the same suites. The `contract-tests` feature is
+enabled only in `[dev-dependencies]`.
 
 ## Limitations
 
-- The temporary path is a hand-off seam for the media adapter; `publish` must not
-  be called until all media writers are closed.
+- Publish-after-close is enforced by contract plus target check, not by the type
+  alone: `ClosedOutput::new` is public, so a media adapter that claims closure
+  without closing its writer is not prevented (see ADR-0021).
 - Directory fsync and power-loss durability semantics are platform/filesystem
   dependent and are not yet claimed.
 - Hosted CI does not replace real-filesystem (NTFS, ext4, btrfs), genuine
