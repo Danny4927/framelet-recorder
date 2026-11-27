@@ -20,5 +20,8 @@ ADRs record decisions that materially shape Framelet. Accepted records are immut
 | [ADR-0014](ADR-0014-transactional-filesystem-storage.md) | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |
 | [ADR-0015](ADR-0015-media-backend-evaluation-decision.md) | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only |
 | [ADR-0016](ADR-0016-native-windows-title-bar.md) | Native dark Windows title bar | Accepted for the Windows desktop shell |
+| [ADR-0017](ADR-0017-port-based-use-case-orchestration.md) | Orchestrate recording use cases through the granular ports | Accepted; supersedes ADR-0012 decision 10 |
+| [ADR-0018](ADR-0018-risk-first-resequencing-and-two-stage-media-decision.md) | Risk-first re-sequencing and a two-stage media backend decision | Accepted — planning/decision process |
+| [ADR-0019](ADR-0019-slint-entry-points-deny-unsafe.md) | Slint-generated entry points use `deny(unsafe_code)` | Accepted — records existing exception |
 
 Use the next sequential identifier. Each record states context, decision, alternatives, consequences, and validation.

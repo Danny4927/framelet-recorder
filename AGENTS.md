@@ -20,7 +20,7 @@ Read `SPECIFICATION.md`, `SECURITY.md`, and `docs/architecture/README.md` before
 
 - Every first-party Rust crate must declare `#![forbid(unsafe_code)]`.
 - Never write or introduce `unsafe`, raw-pointer operations, FFI bindings, unsafe trait implementations, or unsafe performance shortcuts.
-- Never weaken `forbid(unsafe_code)`.
+- Never weaken `forbid(unsafe_code)`. The only exception is the two Slint-generated entry points listed in ADR-0019, which use `deny(unsafe_code)`; adding another exception requires a new ADR.
 - Do not bypass ownership, borrowing, lifetimes, or type checks.
 - Prefer safe APIs and explicit ownership.
 - Third-party dependencies may contain unsafe internals; review and document them. Do not claim the entire dependency graph is unsafe-free.
@@ -41,7 +41,7 @@ Framelet MUST follow hexagonal architecture (ports and adapters) as a non-negoti
 - Do not pass framework/library types across ports. Translate them into application-owned types and typed errors at adapter boundaries.
 - Keep orchestration in application services/use cases; keep device, codec, muxer, and filesystem mechanics in adapters. Do not create a generic service layer that bypasses ports.
 - Add architecture tests or compile-time crate-boundary checks where practical. Tests for core use cases must run with fakes and without physical devices.
-- Every structural change MUST update the corresponding arc42 section and add/update an ADR when the decision is significant. The implementation roadmap in `docs/architecture/implementation-roadmap.md` is the sequencing authority.
+- Every structural change MUST update the corresponding arc42 section and add/update an ADR when the decision is significant. The implementation roadmap in `docs/architecture/implementation-roadmap.md` is the sequencing authority. Exit criteria are only checked with a proof link as defined in `docs/verification/README.md`, and requirement coverage is tracked in `docs/verification/traceability.md`.
 - A feature that violates these rules is not complete, even if it works end-to-end.
 
 Keep UI, application core, capture adapters, media pipeline, and storage separated.

@@ -156,14 +156,14 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
-| core | Recording aggregate, inbound use-case port, granular outbound ports, typed errors/events, metrics snapshots and fakeable orchestration; concrete adapters and durable media storage remain open |
+| core | Split into `domain` (Recording aggregate, source-requirement invariants), `ports` (granular outbound contracts) and `application` (use cases). The application service orchestrates exclusively through the granular ports with typed `CapabilityFailure` errors and publishes lifecycle events (ADR-0017). Timeline model, data-plane routing, storage/media hand-off, and repository/settings/metrics/clock use remain open (roadmap Phase A) |
 | Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska; bounded producer/worker queue, counted video drops, fatal audio overload, queue metrics, EOS, filesink-error and timeout tests exist; no production adapter, independent playback proof, sustained-load validation, or hardware benchmark evidence |
 | Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery. All filesystem calls pass through a crate-private `FileOperations` seam used for adapter-level fault-injection tests (ADR-0014); real NTFS/ext4/btrfs fault runs remain open. Desktop composition validates the default output directory and exposes orphan scans; no production media writer or native directory picker yet |
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
 
-The following sequences describe the target interaction across the granular ports. In the current implementation, the use-case service is exercised with a fakeable `RecordingResources` facade. The `framelet-storage` filesystem adapter exists behind `RecordingStoragePort` and is now used by the desktop composition root for output-directory validation and recovery scans. Concrete screen/camera/microphone/media adapters and native output-directory selection are not yet wired. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
+The following sequences describe the target interaction across the granular ports. The use-case service already coordinates storage, media pipeline, capture, and event ports in the control-plane order fixed by ADR-0017 and is tested with fakes; media payload routing (data plane) is not yet defined. The `framelet-storage` filesystem adapter exists behind `RecordingStoragePort` and is now used by the desktop composition root for output-directory validation and recovery scans. Concrete screen/camera/microphone/media adapters and native output-directory selection are not yet wired. Stop must stop producers, drain accepted media, finalize output, and only then publish a completed artifact. Adapter calls execute on workers, never on UI or real-time callback threads.
 
 ### 6.1 Prepare and start
 
@@ -213,7 +213,7 @@ sequenceDiagram
   Core-->>User: Completed(path)
 ~~~
 
-Any required finalization failure produces a failure/recovery result, never success. Stop is idempotent. Discard is a separate explicit use case.
+Any required finalization failure produces a failure/recovery result, never success. Per ADR-0017 the core stops every capture source, then drains and closes the pipeline, and publishes only if all of those succeeded; every step is attempted even after an earlier failure, and on failure the temporary candidate is kept for recovery discovery instead of being aborted. A failure while starting rolls back already started sources and aborts the reservation. Stop must become idempotent (traceability REQ-LIFE-11, open). Discard of an active recording is a separate explicit use case (REQ-LIFE-12, open).
 
 ### 6.3 Pause/resume and failures
 
@@ -254,7 +254,7 @@ Typed errors cross module boundaries and become actionable UI messages. Preserve
 
 ### Testing
 
-Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery. The desktop shell reports the default output path and orphan count without deleting files. Native directory selection, platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization.
+Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery. The desktop shell reports the default output path and orphan count without deleting files. Native directory selection, platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization. The application service is tested with fake ports for call order, rollback, and failure reporting on every lifecycle path; requirement-to-test traceability is kept in [traceability.md](../verification/traceability.md).
 
 ## 9. Architecture Decisions
 
@@ -276,7 +276,11 @@ See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in 
 | ADR-0012 | Define granular Recording bounded-context port boundaries | Accepted |
 | ADR-0013 | Evaluate GStreamer through an isolated media pipeline PoC | Proposed — evaluation only |
 | ADR-0014 | Transactional filesystem recording storage | Accepted for the Phase 3 adapter slice |
-| ADR-0015 | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only |
+| ADR-0015 | Complete media pipeline evaluation; keep production backend deferred | Accepted — evaluation decision only; selection gates amended by ADR-0018 |
+| ADR-0016 | Native dark Windows title bar | Accepted for the Windows desktop shell |
+| ADR-0017 | Orchestrate recording use cases through the granular ports | Accepted; supersedes ADR-0012 decision 10 |
+| ADR-0018 | Risk-first re-sequencing and two-stage media backend decision | Accepted — planning/decision process |
+| ADR-0019 | Slint-generated entry points use `deny(unsafe_code)` | Accepted — records existing exception |
 
 ## 10. Quality Requirements
 
@@ -313,9 +317,12 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | Hard-link publication unavailable | Filesystem may not support same-volume hard links | Fail closed; validate target filesystems and evaluate safe no-replace alternative only through a new ADR |
 | Device formats vary | Unsupported mode or expensive conversion | Explicit negotiation and capability reporting |
 | Plugin discovery risk | Supply-chain/runtime loading risk | Explicit plugin allowlist and packaged paths |
-| Capture API too small for streaming | Expensive API rework | Design ownership and event contract during PoC |
+| Capture API too small for streaming | Expensive API rework | Data-plane contract decided in roadmap Phase A (A3) before any production adapter |
+| No safe Windows Graphics Capture wrapper | Windows screen capture blocked by the no-unsafe rule | Roadmap spike B1 with Go/No-Go ADR before Phase E2 |
+| H.264/AAC encoders not redistributable under acceptable terms | Default MP4/H.264/AAC output format must change | Roadmap spike B3 encoder/licence matrix before the provisional backend decision |
+| Webcam backend immature on one OS | Webcam modes unavailable on that OS | Roadmap spike B2 with Go/No-Go ADR |
 
-Implementation sequencing and phase exit criteria are defined in [Implementation roadmap](implementation-roadmap.md). Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
+Implementation sequencing and phase exit criteria are defined in [Implementation roadmap](implementation-roadmap.md); how each criterion is proven is defined in the [verification framework](../verification/README.md). Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
 
 ## 12. Glossary
 
