@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# Cancel superseded runs of the same branch/PR; never cancel runs on main.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   linux:
     runs-on: ubuntu-24.04
@@ -32,36 +37,8 @@ jobs:
       - name: Check documentation structure and local links
         run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
-      - name: Resolve workspace dependencies
-        run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
-      - name: Check isolated GStreamer media PoC
-        run: cargo check --manifest-path poc/media-gstreamer/Cargo.toml
-      - name: Test isolated GStreamer media PoC
-        run: cargo test --manifest-path poc/media-gstreamer/Cargo.toml
-      - name: Lint isolated GStreamer media PoC
-        run: cargo clippy --manifest-path poc/media-gstreamer/Cargo.toml --all-targets -- -D warnings
-      - name: Format isolated GStreamer media PoC
-        run: cargo fmt --manifest-path poc/media-gstreamer/Cargo.toml -- --check
-      - name: Check isolated Wayland portal PoC
-        run: cargo check --manifest-path poc/wayland-portal/Cargo.toml
-      - name: Test isolated Wayland portal PoC
-        run: cargo test --manifest-path poc/wayland-portal/Cargo.toml
-      - name: Lint isolated Wayland portal PoC
-        run: cargo clippy --manifest-path poc/wayland-portal/Cargo.toml --all-targets -- -D warnings
-      - name: Format isolated Wayland portal PoC
-        run: cargo fmt --manifest-path poc/wayland-portal/Cargo.toml -- --check
-      - name: Check isolated microphone capture PoC
-        run: cargo check --manifest-path poc/microphone-cpal/Cargo.toml
-      - name: Test isolated microphone capture PoC
-        run: cargo test --manifest-path poc/microphone-cpal/Cargo.toml
-      - name: Lint isolated microphone capture PoC
-        run: cargo clippy --manifest-path poc/microphone-cpal/Cargo.toml --all-targets -- -D warnings
-      - name: Format isolated microphone capture PoC
-        run: cargo fmt --manifest-path poc/microphone-cpal/Cargo.toml -- --check
-      - name: Test microphone ring concurrency model
-        run: cargo test --manifest-path poc/microphone-cpal/Cargo.toml --lib loom_tests
       - name: Verify visual regression baseline
         env:
           FRAMELET_RUN_VISUAL_TESTS: "1"
@@ -76,6 +53,44 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  poc:
+    name: poc (${{ matrix.poc }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        poc: [media-gstreamer, wayland-portal, microphone-cpal]
+    defaults:
+      run:
+        working-directory: poc/${{ matrix.poc }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Slint, PipeWire and ALSA build dependencies
+        working-directory: .
+        run: |
+          packages="libxkbcommon-dev libwayland-dev libx11-xcb-dev libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev libfontconfig1-dev libfreetype6-dev libpipewire-0.3-dev libasound2-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good"
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install --yes -o Acquire::Retries=3 $packages || {
+            echo "Package mirror returned a stale index; refreshing and retrying once."
+            sudo apt-get update -o Acquire::Retries=3
+            sudo apt-get install --yes -o Acquire::Retries=3 $packages
+          }
+      - uses: Swatinem/rust-cache@v2
+        with:
+          # Isolated PoCs build into their own target directory, which the
+          # default workspace cache does not cover.
+          workspaces: poc/${{ matrix.poc }} -> target
+          key: ${{ matrix.poc }}
+      - run: cargo fmt -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test
+      - name: Test microphone ring concurrency model
+        if: matrix.poc == 'microphone-cpal'
+        run: cargo test --lib loom_tests
+
   windows:
     runs-on: windows-latest
     steps:
@@ -89,8 +104,6 @@ jobs:
       - name: Check documentation structure and local links
         run: python scripts/check-docs.py
       - run: cargo fmt --all -- --check
-      - name: Resolve workspace dependencies
-        run: cargo check --workspace --locked
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
 
@@ -110,11 +123,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-      - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+      - name: Install cargo-audit and cargo-deny (prebuilt binaries)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
       - name: Audit RustSec advisories
         # Deny unsound advisories and vulnerabilities; report unmaintained
         # transitive crates without failing when no fixed upgrade exists.
