@@ -2,9 +2,9 @@
 
 Rules: see the [verification framework](README.md). State values: `open`, `implemented`, `automated-tested`, `ui-integrated`, `real-device-validated`. "Required state" is the state a row must reach to count as verified.
 
-This initial matrix covers the core lifecycle requirements in full and seeds IDs for the remaining SPECIFICATION.md areas. Completing the ID assignment for every SPECIFICATION.md and SECURITY.md requirement is roadmap criterion A-10.
+Every normative SPECIFICATION.md item carries its ID inline (for example `[REQ-LIFE-11]`); `scripts/check-traceability.py` (roadmap criterion A-10) checks in CI that every inline ID has exactly one row here, that every row's ID appears in SPECIFICATION.md or SECURITY.md, that phase and state values are valid, that every referenced test exists, that linked evidence files exist, and that rows at `automated-tested` or higher cite a test, a workflow link, or a CI job/step that exists in `.github/workflows/ci.yml` (written `CI job "linux"` or `CI step "<step name>"`). SECURITY.md requirements are not yet tagged inline; until they are, they are traced through the SPECIFICATION.md rows they refine.
 
-Test references use `crate::module::test_name` paths relative to the workspace.
+Test references use `crate::module::test_name` paths relative to the workspace; the checker resolves them to a `#[test] fn test_name` inside the named crate. Phase values are `Foundation`, `A`–`H`, or `every phase`.
 
 ## Core lifecycle and orchestration
 
@@ -23,6 +23,7 @@ Test references use `crate::module::test_name` paths relative to the workspace.
 | REQ-LIFE-11 | Stop is idempotent (Spec §4.3) | A | Application test | — | automated-tested | open |
 | REQ-LIFE-12 | Cancel/discard of an active recording with explicit warning (Spec §4.3) | C | Application test + UI procedure | — | ui-integrated | open |
 | REQ-LIFE-13 | Capture never starts before explicit Start (Spec §4.2) | A | Application test | `framelet_core::application::tests::full_lifecycle_orchestrates_ports_in_order_and_publishes_only_after_finalization` (no capture call before `start`) | automated-tested | automated-tested |
+| REQ-LIFE-14 | On stop, sources are closed, buffers drained, and the container finalized, in that order (Spec §4.2 step 9) | A | Application test | `framelet_core::application::tests::full_lifecycle_orchestrates_ports_in_order_and_publishes_only_after_finalization` | automated-tested | automated-tested |
 
 ## Time and synchronization
 
@@ -33,6 +34,10 @@ Test references use `crate::module::test_name` paths relative to the workspace.
 | REQ-TIME-03 | Timestamp discontinuities and regressions detected (Spec §6.2) | A | Property / exhaustive | `framelet_core::timeline::tests::regression_and_duplicate_are_detected_without_advancing_cursor`, `framelet_core::timeline::tests::discontinuity_threshold_is_exclusive`, `framelet_core::timeline::tests::pause_gap_is_not_a_discontinuity`, `framelet_core::timeline::tests::exhaustive_multi_stream_sequences_up_to_five_ops_match_oracle`, `framelet_core::timeline::tests::seeded_random_long_sequences_match_oracle` | automated-tested | automated-tested |
 | REQ-TIME-04 | A/V sync < 100 ms (Spec §8) | E | Real-device evidence | — | real-device-validated | open |
 | REQ-TIME-05 | Long-recording sync and bounded memory (Spec §6.2, arc42 Q-07) | G | Soak evidence | — | real-device-validated | open |
+| REQ-TIME-06 | Source timestamps preserved where possible (Spec §6.2) | E | Adapter test | — | automated-tested | open |
+| REQ-TIME-07 | Variable frame rate and dropped frames handled on the timeline (Spec §6.2) | E | Property test + stress test | — | automated-tested | open |
+| REQ-TIME-08 | Audio sample position and timestamps stay consistent (Spec §6.2) | C | Unit + output inspection | — | automated-tested | open |
+| REQ-TIME-09 | Clock drift between sources detected (Spec §6.2) | G | Synthetic timeline test + soak evidence | — | real-device-validated | open |
 
 ## Backpressure and data plane
 
@@ -42,6 +47,7 @@ Test references use `crate::module::test_name` paths relative to the workspace.
 | REQ-FLOW-02 | Video drops counted and surfaced (Spec §5.4) | D | Stress test | — | automated-tested | open |
 | REQ-FLOW-03 | Audio loss detected and reported (Spec §5.4) | C | Fault-injection test | — | automated-tested | open |
 | REQ-FLOW-04 | Audio callback real-time safe (Spec §5.4) | C | Review + test | — | automated-tested | open |
+| REQ-FLOW-05 | Audio transferred through a bounded SPSC ring buffer where suitable (Spec §5.4) | C | Review + contract suite | — | automated-tested | open |
 
 ## Storage
 
@@ -52,6 +58,13 @@ Test references use `crate::module::test_name` paths relative to the workspace.
 | REQ-STOR-03 | Incomplete recordings discovered on startup (Spec §7) | C | Adapter test + UI procedure | — | ui-integrated | implemented |
 | REQ-STOR-04 | User can select another directory (Spec §7) | C | UI procedure | — | ui-integrated | open |
 | REQ-STOR-05 | Disk full / write failure handled (Spec §7, arc42 Q-06) | H | Fault injection on real filesystems | — | real-device-validated | open |
+| REQ-STOR-06 | Default output directory is the user's Videos/Framelet directory per platform conventions (Spec §7) | C | Adapter test + UI procedure | — | ui-integrated | open |
+| REQ-STOR-07 | Collision-resistant generated filenames (Spec §7) | A | Adapter test | `framelet_storage::tests::begin_retries_colliding_temporary_names_without_overwriting` | automated-tested | automated-tested |
+| REQ-STOR-08 | Paths validated and symlinks handled carefully (Spec §7) | C | Adapter test | — | automated-tested | open |
+| REQ-STOR-09 | No shell is invoked to create files or directories (Spec §7) | Foundation | Review | — | implemented | implemented |
+| REQ-STOR-10 | No arbitrary path fragments accepted from untrusted metadata (Spec §7) | C | Unit + adapter test | — | automated-tested | open |
+| REQ-STOR-11 | Output file permissions restricted to the current user where supported (Spec §7) | C | Adapter test per OS | — | automated-tested | open |
+| REQ-STOR-12 | Crash/power-loss recovery behaviour documented and tested (Spec §7) | C | Fault injection + documentation | — | automated-tested | open |
 
 ## Modes and platforms
 
@@ -63,13 +76,95 @@ Test references use `crate::module::test_name` paths relative to the workspace.
 | REQ-MODE-PIP | Screen + webcam composition (Spec §1.1, §4.4) | G | Golden-frame + real-device evidence | — | real-device-validated | open |
 | REQ-PLAT-WAYLAND | Wayland via portal + PipeWire (Spec §2.2) | E | Real-device evidence ENV-L1, ENV-L2 | — | real-device-validated | open |
 | REQ-PLAT-WIN | Windows 10/11 (Spec §2.1) | B, E | Spike + real-device evidence ENV-W10, ENV-W11 | — | real-device-validated | open |
-| REQ-PLAT-X11 | X11 tested or explicitly unsupported (Spec §12) | H | Decision record | — | implemented | open |
+| REQ-PLAT-X11 | X11 tested or explicitly unsupported (Spec §2.2, §12) | H | Decision record | — | implemented | open |
+| REQ-PLAT-MACOS | No macOS code, dependencies, CI targets, packaging, or support claims (Spec §2.3) | every phase | Review | — | implemented | implemented |
 
 ## Safety, security, and privacy
 
 | ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
 |---|---|---|---|---|---|---|
-| REQ-SAFE-01 | No first-party unsafe (AGENTS.md) | every phase | `scripts/check-architecture.py` | CI job | automated-tested | automated-tested |
-| REQ-SAFE-02 | Core depends only on contract crates (AGENTS.md) | every phase | `scripts/check-architecture.py` | CI job | automated-tested | automated-tested |
+| REQ-SAFE-01 | No first-party unsafe (Spec §1.3 #5, AGENTS.md) | every phase | `scripts/check-architecture.py` | CI step "Enforce Rust safety and hexagonal architecture" | automated-tested | automated-tested |
+| REQ-SAFE-02 | Core depends only on contract crates (Spec §2.4, AGENTS.md) | every phase | `scripts/check-architecture.py` | CI step "Enforce Rust safety and hexagonal architecture" | automated-tested | automated-tested |
 | REQ-SEC-01 | Offline operation, no network (Spec §1.2, arc42 Q-08) | H | Network observation evidence | — | real-device-validated | open |
 | REQ-SEC-02 | Dependency, licence, and native plugin review (Spec §3.1) | B, D, H | Review records | — | implemented | open |
+| REQ-SAFE-03 | First-party application logic written in Rust (Spec §1.3 #4) | every phase | Review | — | implemented | implemented |
+| REQ-SAFE-04 | OS permission and privacy mechanisms respected, never bypassed (Spec §1.3 #6, §2.1, §4.2 step 4) | E, F | Real-device evidence | — | real-device-validated | open |
+| REQ-SAFE-06 | No panics in production paths; no `unwrap()`/`expect()` on fallible runtime operations (Spec §9) | every phase | Review + Clippy | CI job | automated-tested | open |
+| REQ-SEC-03 | No dynamic loading of media plugins from user-writable directories (Spec §6.3) | D | Review + packaging evidence | — | real-device-validated | open |
+
+## Scope
+
+| ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
+|---|---|---|---|---|---|---|
+| REQ-SCOPE-01 | No system audio capture (Spec §1.1) | every phase | Review | — | implemented | implemented |
+| REQ-SCOPE-02 | Out-of-scope features (cloud, upload, accounts, AI, editing, player, …) are absent (Spec §1.2) | every phase | Review | — | implemented | implemented |
+
+## User experience and devices
+
+| ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
+|---|---|---|---|---|---|---|
+| REQ-UX-01 | A recording starts with only a few deliberate interactions (Spec §1) | C | UI procedure | — | ui-integrated | open |
+| REQ-UX-02 | Minimal UI (Spec §1.3 #3) | C | UI procedure + review | — | ui-integrated | open |
+| REQ-UX-03 | Main window offers mode choices, microphone and camera selection, camera preview, destination, Start, minimal quality and bubble settings (Spec §4.1) | C, F, G | UI procedure + visual regression | — | ui-integrated | open |
+| REQ-UX-04 | No advanced codec or pipeline options in the primary view (Spec §4.1) | C | Visual regression + review | — | ui-integrated | open |
+| REQ-UX-05 | User chooses a mode before recording (Spec §4.2 step 1) | C | UI procedure | — | ui-integrated | open |
+| REQ-UX-06 | Optional three-second countdown before capture (Spec §4.2 step 7) | C | Application test + UI procedure | — | ui-integrated | open |
+| REQ-UX-07 | Start, Pause, Resume, Stop controls with recording status and elapsed time (Spec §4.2 step 8, §4.3) | C | UI procedure | — | ui-integrated | open |
+| REQ-UX-08 | UI stays responsive and its event loop never blocks (Spec §4.2, §5.4) | C | UI procedure + measurement | — | ui-integrated | open |
+| REQ-UX-09 | Spec §4.5 defaults (resolution, frame rate, sample rate, countdown, container, codecs, bubble corner) apply where the device and backend support them (Spec §4.5) | C, D, F, G | Application test + output inspection | — | automated-tested | open |
+| REQ-DEV-01 | Available devices and supported formats are enumerated (Spec §4.2 step 2) | C, E, F | Adapter contract suite + real-device evidence | — | real-device-validated | open |
+| REQ-DEV-02 | Device-supported formats take precedence; no claimed setting the device cannot provide (Spec §4.5) | F | Application test | — | automated-tested | open |
+| REQ-CAP-01 | Capture source selected through the OS-provided picker where applicable (Spec §4.2 step 3) | E | Real-device evidence | — | real-device-validated | open |
+
+## Picture-in-picture bubble
+
+| ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
+|---|---|---|---|---|---|---|
+| REQ-PIP-01 | Default bubble position bottom-right (Spec §4.4) | G | Golden-frame test | — | automated-tested | open |
+| REQ-PIP-02 | Default bubble size about 20% of output width (Spec §4.4) | G | Golden-frame test | — | automated-tested | open |
+| REQ-PIP-03 | Camera aspect ratio preserved with a deterministic fit/crop policy (Spec §4.4, §6.4) | G | Golden-frame test | — | automated-tested | open |
+| REQ-PIP-04 | Bubble size configurable: small, medium, large (Spec §4.4) | G | Golden-frame test + UI procedure | — | ui-integrated | open |
+| REQ-PIP-05 | Bubble corner configurable (Spec §4.4) | G | Golden-frame test + UI procedure | — | ui-integrated | open |
+| REQ-PIP-06 | Preview mirroring never mirrors the screen or the output (Spec §4.4) | G | Golden-frame test | — | automated-tested | open |
+| REQ-PIP-07 | GPU compositing only through safe, reviewed, portable APIs (Spec §6.4) | G | Review | — | implemented | open |
+
+## Architecture, capture contracts, and media
+
+| ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
+|---|---|---|---|---|---|---|
+| REQ-ARCH-01 | No backend or services (Spec §5) | every phase | Review | — | implemented | implemented |
+| REQ-ARCH-02 | Workspace members are buildable; no broken placeholders (Spec §5) | every phase | CI build | CI job "linux", CI job "windows" | automated-tested | automated-tested |
+| REQ-ARCH-03 | UI code performs no capture, encoding, disk I/O, or blocking enumeration (Spec §5.1) | C | Review + `scripts/check-architecture.py` | — | automated-tested | open |
+| REQ-ARCH-04 | Capture, media processing, and storage run outside the UI thread (Spec §5.4) | C | Review + UI procedure | — | ui-integrated | open |
+| REQ-ARCH-05 | Module responsibilities follow Spec §5.1 (Spec §5.1) | every phase | `scripts/check-architecture.py` + review | — | implemented | open |
+| REQ-CAP-02 | Narrow, safe capture traits; frames have clear ownership (Spec §5.2) | A | Contract suite | — | automated-tested | open |
+| REQ-CAP-03 | Frame metadata carries size, stride, pixel format, monotonic timestamp, sequence number, owned data (Spec §5.2) | A | Unit | `framelet_capture_api::tests::video_frame_accepts_valid_owned_buffer`, `framelet_capture_api::tests::video_frame_rejects_zero_dimensions`, `framelet_capture_api::tests::video_frame_rejects_short_stride`, `framelet_capture_api::tests::video_frame_rejects_short_buffer` | automated-tested | automated-tested |
+| REQ-CAP-04 | Audio blocks carry sample rate, channels, sample format, monotonic position, owned samples (Spec §5.2). `AudioBlock` has no sample-format field yet; samples are implicitly `f32`. The explicit field is pending ([audio block contract](../architecture/capture-and-media-contracts.md), ADR-0005) | A | Unit | — | automated-tested | open |
+| REQ-CAP-05 | Dimensions, strides, lengths validated with checked arithmetic before allocation (Spec §5.2) | C, E | Property / fuzz test | — | automated-tested | open |
+| REQ-ERR-01 | Typed error set covers permission, cancellation, device, capture, encoder, storage, disk space, format, overrun (Spec §5.3) | A | Unit | — | automated-tested | open |
+| REQ-MEDIA-01 | Video output MP4/H.264 (Spec §6.3) | D | Output inspection | — | automated-tested | open |
+| REQ-MEDIA-02 | Audio output AAC in MP4/M4A (Spec §6.3) | D | Output inspection | — | automated-tested | open |
+| REQ-MEDIA-03 | Software encoder fallback; hardware encoder never assumed (Spec §6.3) | D | Integration test + real-device evidence | — | real-device-validated | open |
+| REQ-MEDIA-04 | Media pipeline and plugins tested and packaged explicitly per OS (Spec §6.3) | D | Packaging evidence | — | real-device-validated | open |
+
+## Error handling
+
+| ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
+|---|---|---|---|---|---|---|
+| REQ-ERR-02 | Errors are actionable for the user (Spec §9) | C | UI procedure | — | ui-integrated | open |
+| REQ-ERR-03 | Permission denied explains which OS permission is needed and where (Spec §9) | E | UI procedure + real-device evidence | — | real-device-validated | open |
+| REQ-ERR-04 | Cancelled source selection returns to Ready without starting (Spec §9) | E | Adapter contract test | — | automated-tested | open |
+| REQ-ERR-05 | Camera disconnect stops safely or continues only when the mode stays valid and the user is informed (Spec §9) | F | Real-device evidence | — | real-device-validated | open |
+| REQ-ERR-06 | Microphone disconnect is reported; no falsely complete recording (Spec §9) | C | Fault injection + real-device evidence | — | real-device-validated | open |
+| REQ-ERR-07 | Encoder failure stops the pipeline and reports recoverability (Spec §9) | D | Integration test | — | automated-tested | open |
+
+## Performance, process, and acceptance
+
+| ID | Requirement (source) | Phase | Method | Tests / evidence | Required state | State |
+|---|---|---|---|---|---|---|
+| REQ-PERF-01 | Spec §8 targets measured with full RSS and published context; misses documented (Spec §1.3 #3, §8) | H | Measurement evidence | — | real-device-validated | open |
+| REQ-PROC-01 | UI controls invoke real use cases or are visibly unavailable; each increment ships a manual test procedure (Spec §4.6) | every phase | Review + UI procedure | — | ui-integrated | open |
+| REQ-PROC-02 | Planning kept as Markdown in the repository, not GitHub Issues (Spec §4.7) | every phase | Review | — | implemented | implemented |
+| REQ-TEST-01 | Unit tests cover the Spec §10.1 areas (Spec §10.1) | every phase | Unit | — | automated-tested | open |
+| REQ-TEST-02 | Integration scenarios of Spec §10.2 run on every supported OS (Spec §10.2) | H | Integration tests + real-device evidence | — | real-device-validated | open |
+| REQ-ACC-01 | MVP acceptance criteria met (Spec §10.3) | H | Release review with linked evidence | — | real-device-validated | open |

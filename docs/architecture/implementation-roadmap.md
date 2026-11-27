@@ -132,7 +132,7 @@ Exit criteria and proof:
 | A-7 | Data-plane and hand-off contracts are complete | [ ] ADRs for A3/A4 accepted; contract suites cover overload, source loss, closed-writer hand-off |
 | A-8 | Fakes and real adapters agree | [ ] Storage adapter and all fakes pass the A5 contract suites in CI |
 | A-9 | Tests are strong enough | [ ] Mutation run on `framelet-core`: zero surviving mutants, or each survivor justified in the evidence record |
-| A-10 | Completeness is machine-checked | [ ] `check-traceability.py` runs in CI; every SPECIFICATION.md requirement has an ID and a phase |
+| A-10 | Completeness is machine-checked | [x] `scripts/check-traceability.py` (inline `[REQ-…]` tags in SPECIFICATION.md, every tag has a matrix row with a valid phase and state), self-tested by `scripts/test_check_traceability.py`; both run in the `linux` and `windows` jobs of `.github/workflows/ci.yml` |
 | A-V1 | Foundation verified | [ ] Link to a green `main` CI run (Linux + Windows, audits) recorded in `docs/verification/evidence/` |
 
 ## Phase B — Risk spikes (Go/No-Go)
