@@ -14,6 +14,8 @@ use framelet_capture_api::{SourceDescriptor, SourceId, SourceKind};
 use crate::data_plane::{AudioSink, DataPlaneError, MediaSinks, VideoSink};
 use crate::{RecordingArtifact, RecordingConfiguration, RecordingId};
 
+pub use crate::settings::{LoadedSettings, RecordingSettings, SettingsError, SettingsOrigin};
+
 /// Opaque identity for one opened capture source.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct CaptureSessionId(String);
@@ -332,21 +334,26 @@ pub trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
 }
 
-/// Persisted, user-editable settings relevant to recording.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecordingSettings {
-    /// Preferred output directory as an opaque user-facing path.
-    pub output_directory: String,
-    /// Whether microphone input is enabled by default where the mode permits it.
-    pub microphone_enabled_by_default: bool,
-}
-
-/// Settings port. Implementations own serialization and platform-specific locations.
+/// Settings port. Implementations own serialization and platform-specific
+/// locations and map their format onto the core settings types (ADR-0023).
+///
+/// Contract (`contract::settings`):
+/// - `load` never fails and never modifies or deletes stored settings. With
+///   nothing stored it returns defaults with [`SettingsOrigin::DefaultsNotStored`];
+///   with unusable stored settings (malformed, unknown schema version, invalid
+///   value, unreadable) it returns defaults with
+///   [`SettingsOrigin::DefaultsAfterError`] carrying the typed reason.
+/// - `save` replaces the stored settings atomically: on success a later `load`
+///   returns exactly `settings`; on failure it returns
+///   [`SettingsError::WriteFailed`] and the previously stored settings are
+///   unchanged and still loadable. It never leaves a partially written file
+///   in place of the settings.
+/// - Methods run on a worker, never on the UI thread or a device callback.
 pub trait RecordingSettingsPort: Send + Sync {
-    /// Loads settings, returning defaults when no settings have been stored.
-    fn load(&self) -> Result<RecordingSettings, PortError>;
-    /// Validates and stores settings.
-    fn save(&self, settings: &RecordingSettings) -> Result<(), PortError>;
+    /// Loads settings, falling back to safe defaults with a typed origin.
+    fn load(&self) -> LoadedSettings;
+    /// Stores already validated settings atomically.
+    fn save(&self, settings: &RecordingSettings) -> Result<(), SettingsError>;
 }
 
 /// Repository port for durable session metadata, not media payloads.

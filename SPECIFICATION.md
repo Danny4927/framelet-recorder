@@ -206,7 +206,7 @@ framelet-recorder/
     ├── capture-audio/
     ├── media-pipeline/
     ├── storage/
-    ├── config/
+    ├── settings/
     └── platform/
 ```
 
@@ -226,7 +226,7 @@ Each module has the following responsibility: [REQ-ARCH-05]
 | capture-audio | Microphone enumeration and audio capture |
 | media-pipeline | Timestamping, compositing, encoding, muxing |
 | storage | Safe local file creation/finalization |
-| config | Validated local settings |
+| settings | Validated local settings (TOML file adapter, ADR-0023) |
 | platform | OS-specific integration and capability detection |
 
 UI code must not perform capture, encoding, disk I/O, or blocking device enumeration. [REQ-ARCH-03]
@@ -352,6 +352,17 @@ Requirements:
 - On startup, identify incomplete temporary recordings and offer safe recovery/discard where possible. [REQ-STOR-03]
 
 A crash or power failure cannot be guaranteed to preserve a valid MP4. Recovery behavior must be documented and tested. [REQ-STOR-12]
+
+### 7.1 Settings
+
+*Provisional:* the requirements in this section follow the maintainer decision of 28 November 2026; the schema, defaults, and value ranges they refer to are proposed in ADR-0023 and are not final until it is accepted. *(informative)*
+
+User-editable recording settings are stored locally in one TOML file: on Linux `$XDG_CONFIG_HOME/framelet/settings.toml`, falling back to `$HOME/.config/framelet/settings.toml`; on Windows `%APPDATA%\Framelet\settings.toml`. The location is resolved from these environment variables; if it cannot be resolved, defaults are used and the error is shown. [REQ-CFG-01]
+
+- The file carries a schema version. A missing or unknown version is reported with a typed error and the file is not interpreted. [REQ-CFG-02]
+- Missing settings load as safe defaults without an error. Unreadable, malformed, unknown-version, or invalid settings load as safe defaults together with a typed error that is shown to the user; loading never modifies or deletes the stored file. [REQ-CFG-03]
+- Setting values are validated by the core against documented ranges; out-of-range values are rejected, never silently clamped. [REQ-CFG-04]
+- Settings are written atomically (temporary file in the same directory, then rename). A failed write reports a typed error and leaves the previously stored settings intact; a partially written file never replaces them. Loading and saving never panic. [REQ-CFG-05]
 
 ---
 

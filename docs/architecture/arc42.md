@@ -94,11 +94,12 @@ Framelet is a single desktop application. The core contains the Recording bounde
 | Module | Responsibility | Depends on |
 |---|---|---|
 | `apps/desktop` | Slint UI, inbound command adapter, future composition root | Core; composition root may construct adapters |
-| `crates/core` | Recording domain aggregate, application use cases, ports, core-owned bounded data plane (`data_plane`), typed events/errors; with the `contract-tests` feature, shared port contract suites and fakes (`contract`) | capture-api contracts and standard library |
+| `crates/core` | Recording domain aggregate, recording settings value objects (`settings`), application use cases, ports, core-owned bounded data plane (`data_plane`), typed events/errors; with the `contract-tests` feature, shared port contract suites and fakes (`contract`) | capture-api contracts and standard library |
 | `crates/capture-api` | Backend-neutral source descriptors and validated owned media blocks | Standard library |
 | Future capture adapters | OS/device capture mechanics and native type translation | Core ports, capture-api |
 | Future media adapter | Encoding, muxing and finalization; consumes the core-owned input streams it creates at prepare | Core media port and data plane, capture-api |
 | `crates/storage` | Temp output reservation, publication of a closed output, abort, and recovery discovery | Core storage port; core `contract-tests` for its tests only |
+| `crates/settings` | TOML settings file adapter (`TomlSettingsFile`): platform location, schema v1 mapping to core settings types, validated load with typed fallback to defaults, atomic save (ADR-0023) | Core settings port; `serde`, `toml` (the only crate allowed to use them); core `contract-tests` for its tests only |
 | `poc/*` | Isolated, opt-in technology evaluations | Evaluation-only dependencies; never imported by core |
 
 ### 5.3 Hexagonal architecture and dependency rule (binding)
@@ -144,6 +145,9 @@ DDD is the required modeling approach for Framelet's application domain. It work
 | Audio discontinuity | Audio rejected under overload; counted and marked on the next accepted block, never silent |
 | Source loss | A capture source disappearing during capture; its outcome (continue without the optional microphone, or stop) is a domain rule of the recording configuration |
 | Degraded recording | A completed session that lost a source it could continue without (`lost_sources()` is not empty) |
+| Recording settings | The persisted, user-editable preferences of the Recording context (explicit output directory, optional microphone on by default); defaults are safe and owned by the core |
+| Output directory | A user-chosen recording directory: absolute, at most 4096 bytes, no control characters, no `..`; absent means the platform default Videos/Framelet directory |
+| Settings origin | Where loaded settings came from: stored, defaults because nothing is stored, or defaults after a typed error that must be shown |
 
 **Modeling rules:**
 - Put domain concepts and invariants in `crates/core` (or a clearly separated domain module within the core); keep `capture-api` focused on transport/interoperability contracts rather than becoming a second domain model.
@@ -164,9 +168,10 @@ The initial MVP is one bounded context: **Recording**. Split additional bounded 
 | capture-api | Safe source descriptors, validated owned media blocks, and bounded worker-level audio queue implemented; production adapter wiring remains open |
 | Wayland capture | Isolated XDG Portal/PipeWire PoC receives CPU-backed frames; real KDE/GNOME tests not run |
 | Microphone capture | Isolated CPAL 0.18.2 PoC enumerates devices and receives default F32 samples into a bounded ring; real-device tests not run |
-| core | Split into `domain` (Recording aggregate, source-requirement and source-loss invariants), `ports` (granular outbound contracts), `data_plane` (bounded sinks/streams with the video-drop and audio-discontinuity policy), `timeline`, and `application` (use cases). The application service orchestrates exclusively through the granular ports with typed `CapabilityFailure` errors and publishes lifecycle events (ADR-0017); capture adapters feed core-owned sinks created by the media pipeline at prepare, the output target flows from the storage reservation to the media pipeline, and publication requires the media pipeline's `ClosedOutput` (ADR-0020, ADR-0021). Shared contract suites and fakes live in `contract` behind the `contract-tests` feature. Repository/settings/metrics/clock use remains open (roadmap A6) |
+| core | Split into `domain` (Recording aggregate, source-requirement and source-loss invariants), `ports` (granular outbound contracts), `data_plane` (bounded sinks/streams with the video-drop and audio-discontinuity policy), `timeline`, and `application` (use cases). The application service orchestrates exclusively through the granular ports with typed `CapabilityFailure` errors and publishes lifecycle events (ADR-0017); capture adapters feed core-owned sinks created by the media pipeline at prepare, the output target flows from the storage reservation to the media pipeline, and publication requires the media pipeline's `ClosedOutput` (ADR-0020, ADR-0021). Shared contract suites and fakes live in `contract` behind the `contract-tests` feature. The settings port returns usable settings plus a typed origin and saves atomically (ADR-0023). Repository/metrics/clock use, and composing the settings port in the desktop app, remain open (roadmap A6, C2) |
 | Media pipeline/compositing/encoding | Isolated GStreamer appsrc PoC sends synthetic owned audio/video through VP8/Vorbis and Matroska; bounded producer/worker queue, counted video drops, fatal audio overload, queue metrics, EOS, filesink-error and timeout tests exist; no production adapter, independent playback proof, sustained-load validation, or hardware benchmark evidence |
 | Storage/recovery | `framelet-storage` adapter implements exclusive temp reservation, no-replace atomic publication where hard links are supported, abort, and non-destructive orphan discovery. All filesystem calls pass through a crate-private `FileOperations` seam used for adapter-level fault-injection tests (ADR-0014); real NTFS/ext4/btrfs fault runs remain open. Reservations carry the output target for the media pipeline; publication requires the matching `ClosedOutput`; abort is idempotent (ADR-0021). The adapter passes the shared storage contract suites (`crates/storage/tests/contract.rs`). Desktop composition validates the default output directory and exposes orphan scans; no production media writer or native directory picker yet |
+| Settings | `framelet-settings` adapter stores `settings.toml` (schema v1) at the platform location, rejects malformed, unknown-version, and out-of-range files with typed errors while returning defaults and leaving the file untouched, and saves through temp file + rename with fault-injection tests at every step (ADR-0023, Proposed). It passes the shared settings contract suite (`crates/settings/tests/contract.rs`). Not yet constructed in `apps/desktop`; UI display of settings errors and use of the stored output directory are C2 slice work |
 | Platform packaging | Not implemented |
 
 ## 6. Runtime View
@@ -242,7 +247,7 @@ One installed desktop process; no daemon or helper service. The isolated media e
 - Windows: executable plus explicitly packaged and reviewed runtime dependencies. The native title bar and caption buttons remain OS-owned; on Windows 11 build 22000+, the desktop shell sets title background, title text, and border colors through Winit. Older Windows versions retain the system title-bar appearance.
 - Linux Wayland: executable plus documented portal/PipeWire integration and runtime dependencies.
 - Linux X11: separate adapter/package validation; no implied Wayland parity.
-- Output and settings stay in user-owned local directories.
+- Output and settings stay in user-owned local directories. Settings: Linux `$XDG_CONFIG_HOME/framelet/settings.toml` (fallback `$HOME/.config/framelet/settings.toml`), directory `0700` and file `0600` when Framelet creates them; Windows `%APPDATA%\Framelet\settings.toml` under the per-user profile ACL (ADR-0023). No settings are written outside these paths.
 
 The GStreamer media PoC uses appsrc, videoconvert, vp8enc, audioconvert, audioresample, vorbisenc, matroskamux, and filesink. This is a PoC-specific diagnostic plugin set, not an approved production allowlist. Linux CI exercises this set; Windows clean-machine deployment and a redistributable plugin/license inventory have not been validated. Native runtime/plugin inventory must be explicit and reproducible. Do not load arbitrary plugins from user-writable paths. Test packages on clean machines; recording must work offline.
 
@@ -268,13 +273,17 @@ Use a monotonic clock and common origin. Preserve source timestamps where possib
 
 Explicit user action and OS-mediated permissions; no network or telemetry. Never log captured media or unnecessary device identifiers. Validate dimensions, stride, formats, lengths, arithmetic, and paths. Restrict output permissions where supported. Review unsafe internals, FFI, advisories, licenses, native libraries, dynamic loading, and plugins.
 
+### Settings persistence
+
+Settings rules (value invariants, defaults, reject-not-clamp) live in `framelet_core::settings`; file format, location, and I/O live in `crates/settings` (ADR-0023). `load` is infallible: it returns usable settings and a `SettingsOrigin`, so a missing file is not an error while a malformed, unknown-version, oversized, unreadable, or invalid file yields defaults plus a typed `SettingsError` for the UI. A rejected file is never modified. `save` writes a same-directory temporary file, flushes it, and renames it over `settings.toml`; any failure returns `WriteFailed` and leaves the previous file byte-identical. A read-only settings file is respected. Settings I/O blocks and must run on a worker. serde/toml are confined to `crates/settings` by `scripts/check-architecture.py`; core types do not derive serde.
+
 ### Error handling
 
 Typed errors cross module boundaries and become actionable UI messages. Preserve diagnostic causes without exposing sensitive content. Distinguish cancellation from denial and backend failure. No panic in production paths. Pipeline errors, missing terminal messages, and EOS timeout must be observable as failed finalization; candidate output is not reported as complete.
 
 ### Testing
 
-Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery. The desktop shell reports the default output path and orphan count without deleting files. Native directory selection, platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization. The application service is tested with fake ports for call order, rollback, and failure reporting on every lifecycle path; requirement-to-test traceability is kept in [traceability.md](../verification/traceability.md). Shared port contract suites (`framelet_core::contract::{storage, media, capture}`, `contract-tests` feature, ADR-0021) run against the core fakes and against every real adapter; the filesystem storage adapter runs them in `crates/storage/tests/contract.rs`. `scripts/check-architecture.py` confines the feature to `[dev-dependencies]`.
+Unit tests cover state/use cases, timestamps, settings, paths, checked buffer calculations. Contract tests cover adapter lifecycle, cancellation, disconnect, format negotiation, and queue bounds. The isolated media PoC tests its synthetic timeline, concurrent bounded queue behavior, pipeline-wide EOS, filesink failure, EOS timeout, and non-empty successful output. Encoder-specific error injection and interrupted-process recovery remain open. The filesystem adapter tests exclusive temp reservation, no-replace publication, abort, missing candidates, and non-destructive orphan discovery. The desktop shell reports the default output path and orphan count without deleting files. Native directory selection, platform-specific fault injection and crash durability remain open. Real-device integration tests cover every claimed OS/mode. Visual regression is separate from capture correctness. Long-run tests measure memory, audio continuity, sync, and finalization. The application service is tested with fake ports for call order, rollback, and failure reporting on every lifecycle path; requirement-to-test traceability is kept in [traceability.md](../verification/traceability.md). Shared port contract suites (`framelet_core::contract::{storage, media, capture, settings}`, `contract-tests` feature, ADR-0021, ADR-0023) run against the core fakes and against every real adapter; the filesystem storage adapter runs them in `crates/storage/tests/contract.rs` and the TOML settings adapter in `crates/settings/tests/contract.rs`. The settings adapter additionally injects a failure at every step of its atomic write and checks the previous file stays intact; its Unix permission tests skip with a message when run with privileges that bypass permissions. `scripts/check-architecture.py` confines the feature to `[dev-dependencies]`.
 
 ## 9. Architecture Decisions
 
@@ -304,6 +313,7 @@ See [ADR index](adr/README.md). The initial GStreamer evaluation is recorded in 
 | ADR-0020 | Core-owned bounded data plane, overload policy, and source loss | Accepted (2026-11-28) |
 | ADR-0021 | Storage-to-media hand-off through the core, and shared port contract suites | Accepted (2026-11-28) |
 | ADR-0022 | Mutation testing of `framelet-core` with cargo-mutants | Accepted (2026-11-28) |
+| ADR-0023 | Persist recording settings as a TOML file in a dedicated settings adapter | Proposed |
 
 ## 10. Quality Requirements
 
@@ -347,6 +357,8 @@ SPECIFICATION.md contains performance targets. Publish measurements only with ha
 | No safe Windows Graphics Capture wrapper | Windows screen capture blocked by the no-unsafe rule | Roadmap spike B1 with Go/No-Go ADR before Phase E2 |
 | H.264/AAC encoders not redistributable under acceptable terms | Default MP4/H.264/AAC output format must change | Roadmap spike B3 encoder/licence matrix before the provisional backend decision |
 | Webcam backend immature on one OS | Webcam modes unavailable on that OS | Roadmap spike B2 with Go/No-Go ADR |
+| One invalid settings value resets all settings to defaults | User loses preferences until the file is fixed | File is preserved, error names the line or rule; whole-file rejection is a deliberate ADR-0023 decision awaiting confirmation |
+| `APPDATA`/`HOME` missing or redirected | Settings location unavailable | Typed `LocationUnavailable` with defaults; revisit a Known Folder lookup if observed (ADR-0023 alternatives) |
 
 Implementation sequencing and phase exit criteria are defined in [Implementation roadmap](implementation-roadmap.md); how each criterion is proven is defined in the [verification framework](../verification/README.md). Open questions: safe Windows capture wrapper; safe Wayland portal/PipeWire API; CPAL sample-format coverage, device-loss behavior and cross-platform quality; nokhwa cross-platform quality; GStreamer versus alternatives; owned pixel/audio formats; measured queue capacities.
 

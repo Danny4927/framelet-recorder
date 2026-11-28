@@ -10,6 +10,8 @@
 //! behaviour without failing a call: `media.prepare.mismatch` makes the media
 //! fake return sinks for a different configuration, and `media.close.foreign`
 //! makes it return a [`ClosedOutput`] for a target it was not prepared with.
+//! The settings fake fails `settings.save` with
+//! [`SettingsError::WriteFailed`] instead of a [`PortError`].
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -22,17 +24,20 @@ use framelet_capture_api::{
 
 use super::capture::CaptureSubject;
 use super::media::MediaSubject;
+use super::settings::SettingsSubject;
 use super::storage::StorageSubject;
 use crate::data_plane::{
     AudioSink, MediaStreams, Received, StreamCapacities, VideoSink, media_inputs,
 };
 use crate::domain::{RecordingArtifact, RecordingConfiguration, RecordingId, RecordingMode};
+use crate::ports::RecordingSettingsPort;
 use crate::ports::{
     CameraCapturePort, CaptureSessionId, ClosedOutput, MediaPipelinePort, MediaSessionId,
     MicrophoneCapturePort, OutputTarget, PortError, PreparedMedia, RecordingEvent,
     RecordingEventPublisher, RecordingStoragePort, ScreenCapturePort, SelectedSource,
     StorageReservation, StorageSessionId,
 };
+use crate::settings::{LoadedSettings, RecordingSettings, SettingsError, SettingsIoFailure};
 
 /// Locks a fake's state. A poisoned lock only follows a panicking test;
 /// recover the data so later assertions still report meaningful results.
@@ -874,5 +879,109 @@ impl RecordingEventPublisher for FakeEvents {
         };
         self.log.push(format!("event:{name}"));
         lock(&self.history).push(event);
+    }
+}
+
+// --------------------------------------------------------------- settings
+
+/// What the settings fake holds.
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum FakeStoredSettings {
+    /// Settings a previous `save` stored.
+    Valid(RecordingSettings),
+    /// Content the adapter cannot accept, as a hand-edited broken file.
+    Unusable,
+}
+
+/// In-memory [`RecordingSettingsPort`] with the TOML adapter's semantics:
+/// defaults when nothing is stored, defaults plus a typed error for unusable
+/// content (left unchanged), and all-or-nothing saves.
+#[derive(Clone, Debug)]
+pub struct FakeSettings {
+    log: Log,
+    faults: Faults,
+    stored: Arc<Mutex<Option<FakeStoredSettings>>>,
+}
+
+impl FakeSettings {
+    /// Creates an empty store logging into `log` and failing per `faults`.
+    #[must_use]
+    pub fn new(log: Log, faults: Faults) -> Self {
+        Self {
+            log,
+            faults,
+            stored: Arc::default(),
+        }
+    }
+
+    /// Replaces the stored content with content `load` must reject.
+    pub fn store_unusable(&self) {
+        *lock(&self.stored) = Some(FakeStoredSettings::Unusable);
+    }
+
+    /// Returns a stable representation of the stored content, if any.
+    #[must_use]
+    pub fn stored_bytes(&self) -> Option<Vec<u8>> {
+        lock(&self.stored)
+            .as_ref()
+            .map(|stored| format!("{stored:?}").into_bytes())
+    }
+}
+
+impl RecordingSettingsPort for FakeSettings {
+    fn load(&self) -> LoadedSettings {
+        self.log.push("settings.load");
+        match lock(&self.stored).clone() {
+            None => LoadedSettings::defaults_not_stored(),
+            Some(FakeStoredSettings::Valid(settings)) => LoadedSettings::stored(settings),
+            Some(FakeStoredSettings::Unusable) => {
+                LoadedSettings::defaults_after_error(SettingsError::Malformed { line: None })
+            }
+        }
+    }
+
+    fn save(&self, settings: &RecordingSettings) -> Result<(), SettingsError> {
+        self.log.push("settings.save");
+        if self.faults.is_set("settings.save") {
+            return Err(SettingsError::WriteFailed(SettingsIoFailure::Other));
+        }
+        *lock(&self.stored) = Some(FakeStoredSettings::Valid(settings.clone()));
+        Ok(())
+    }
+}
+
+/// Contract-suite subject for [`FakeSettings`].
+#[derive(Debug)]
+pub struct FakeSettingsSubject {
+    settings: FakeSettings,
+    faults: Faults,
+}
+
+impl Default for FakeSettingsSubject {
+    fn default() -> Self {
+        let faults = Faults::default();
+        Self {
+            settings: FakeSettings::new(Log::default(), faults.clone()),
+            faults,
+        }
+    }
+}
+
+impl SettingsSubject for FakeSettingsSubject {
+    fn settings(&self) -> &dyn RecordingSettingsPort {
+        &self.settings
+    }
+
+    fn stored_bytes(&self) -> Option<Vec<u8>> {
+        self.settings.stored_bytes()
+    }
+
+    fn store_unusable_settings(&mut self) {
+        self.settings.store_unusable();
+    }
+
+    fn make_saves_fail(&mut self) -> bool {
+        self.faults.add("settings.save");
+        true
     }
 }

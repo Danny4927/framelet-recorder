@@ -12,7 +12,12 @@ FORBIDDEN_CORE_REFERENCES = (
     "pipewire::",
     "gstreamer::",
     "ffmpeg::",
+    "serde",
+    "toml::",
 )
+# Serialization dependencies are confined to the settings adapter (ADR-0023).
+SERIALIZATION_DEPENDENCIES = frozenset({"serde", "serde_core", "serde_derive", "toml"})
+SERIALIZATION_ADAPTER = ROOT / "crates/settings/Cargo.toml"
 
 
 def fail(message: str) -> None:
@@ -143,7 +148,30 @@ def check_core_boundary() -> None:
     print("Core inward-only dependency boundary verified.")
 
 
+def check_serialization_confined() -> None:
+    """Only the settings adapter may depend on serde or toml (ADR-0023).
+
+    Core settings types therefore cannot derive serde, and no other crate can
+    grow a second persistence format without a reviewed change here.
+    """
+    for root in FIRST_PARTY_CRATES:
+        if not root.exists():
+            continue
+        for manifest_path in root.rglob("Cargo.toml"):
+            if "target" in manifest_path.parts or manifest_path == SERIALIZATION_ADAPTER:
+                continue
+            manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+            found = sorted(dependency_names(manifest) & SERIALIZATION_DEPENDENCIES)
+            if found:
+                fail(
+                    f"{manifest_path.relative_to(ROOT)} depends on {found}; "
+                    "serialization belongs to crates/settings (ADR-0023)"
+                )
+    print("Serialization dependencies are confined to crates/settings.")
+
+
 if __name__ == "__main__":
     check_first_party_crates()
     check_core_boundary()
     check_contract_tests_feature()
+    check_serialization_confined()

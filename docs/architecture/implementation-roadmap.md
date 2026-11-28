@@ -73,7 +73,7 @@ This replaces the former cross-cutting "Phase 7". Each slice PR must show:
 | — | Foundation (former Phases 0, 1, Phase 2 PoC work, Phase 3 adapter slice) | Delivered; formal verification folded into Phase A | — |
 | A | Core consolidation: port-based orchestration, timeline model, data-plane and storage/media hand-off contracts, contract test suites, traceability tooling | In progress — A-1…A-8, A-10 done (ADR-0020/0021/0022 accepted 2026-11-28); A-9 awaits a mutation run on a committed SHA | — |
 | B | Risk spikes with Go/No-Go: Windows capture (safe), webcam, encoder/licence matrix | Planned | — (parallel to A) |
-| C | Walking skeleton: microphone → WAV (interim) → storage → UI; settings and output directory | Planned | A |
+| C | Walking skeleton: microphone → WAV (interim) → storage → UI; settings and output directory | Planned — settings adapter and C-7 tests delivered, C-7 not yet checked (awaits ADR-0023 acceptance and Windows CI); slice work not started | A |
 | D | Provisional media backend; microphone → M4A/AAC; packaging pipeline starts | Planned | B, C |
 | E | Screen capture slices: E1 Wayland, E2 Windows | Planned | D (E2 also B1 = Go) |
 | F | Webcam-only slice with preview | Planned | D, B2 = Go |
@@ -159,7 +159,7 @@ Exit criteria and proof:
 
 Deliverables:
 - **C1 — Microphone → WAV.** Promote the CPAL PoC into a production microphone adapter after dependency review (explicit device selection, format negotiation, callback → SPSC ring → worker → bounded queue). An interim WAV media adapter implements `MediaPipelinePort` using the A3/A4 contracts. The UI labels WAV explicitly as an interim format. Start, pause, resume, stop, and cancel work from the UI; the completed path is shown only after publication.
-- **C2 — Settings and output directory.** TOML settings adapter behind `RecordingSettingsPort` (validated, malformed files handled safely); output directory selection through a reviewed native dialog adapter; recovery scan uses the selected directory.
+- **C2 — Settings and output directory.** TOML settings adapter behind `RecordingSettingsPort` (validated, malformed files handled safely); output directory selection through a reviewed native dialog adapter; recovery scan uses the selected directory. *Settings adapter implemented:* `crates/settings` (`TomlSettingsFile`), core settings value objects in `crates/core/src/settings.rs`, contract suite `framelet_core::contract::settings`; [ADR-0023](adr/ADR-0023-toml-settings-persistence.md) (Proposed). *Open in C2:* composing the adapter in `apps/desktop`, showing settings errors in the UI, feeding the stored output directory to storage and the recovery scan, and the native directory dialog.
 
 Exit criteria and proof:
 
@@ -171,9 +171,9 @@ Exit criteria and proof:
 | C-4 | Callback is real-time safe | [ ] Code review checklist for the callback (no allocation, lock, I/O, logging); test counting allocations in the callback path, or documented static argument if not measurable |
 | C-5 | Device loss is handled | [ ] Evidence record: unplug during recording on Linux and Windows → typed `SourceLost`, safe stop, recoverable output |
 | C-6 | Real-device validation | [ ] Evidence records for the reference matrix entries claimed (at least one Linux Wayland and one Windows machine) using the C1 manual procedure, 10-minute standard run |
-| C-7 | Settings are robust | [ ] Tests for missing, malformed, out-of-range, and unwritable settings files |
+| C-7 | Settings are robust | [ ] Tests for missing, malformed, out-of-range, and unwritable settings files. Implementation and tests done; tick after ADR-0023 acceptance and a green `windows` CI job. Tests: missing — `framelet_settings::tests::missing_file_loads_defaults_and_creates_nothing`, `framelet_settings::contract::toml_settings_missing_settings_load_as_defaults`; malformed — `framelet_settings::tests::malformed_file_loads_defaults_with_error_and_is_left_unchanged`, `malformed_toml_reports_its_line`, `non_utf8_file_is_malformed_at_the_offending_line`, `deeply_nested_input_is_rejected_without_crashing`, `unsupported_version_file_loads_defaults_with_error_and_is_left_unchanged`; out-of-range — `framelet_settings::tests::out_of_range_file_loads_defaults_with_error_and_is_left_unchanged`, `out_of_range_output_directories_are_rejected_not_clamped`, `framelet_core::settings::tests::output_directory_rejects_every_invariant_violation`; unwritable — `framelet_settings::tests::read_only_settings_file_is_not_replaced`, `read_only_directory_save_fails_and_keeps_settings`, `every_failed_save_step_keeps_previous_settings_and_removes_the_temporary_file`, `framelet_settings::contract::toml_settings_failed_save_keeps_previous_settings`; they run under `cargo test --workspace --locked` in the `linux` and `windows` CI jobs |
 
-Note (C-7): no settings adapter exists yet. C2 names a TOML adapter, but the owning crate, the serialization dependency (ADR + dependency review) and the on-disk schema/default and out-of-range policy are not decided, so C-7 cannot be tested. Phase C as a whole is not complete.
+Note (C-7): implementation and tests done, criterion not yet checked. Tick it after (1) the maintainer accepts [ADR-0023](adr/ADR-0023-toml-settings-persistence.md) (schema, defaults, value ranges, reject-not-clamp policy, port change, dependency review) and (2) a green `windows` CI job is linked, because the Windows-only tests (`windows_location_*`, the Windows branches of the read-only and directory checks) have not run yet. Local evidence so far (28 November 2026, Linux container): all settings tests pass as root (the Unix read-only-directory and unreadable-file tests skip with a message, as designed) and as an unprivileged user (no skips). If acceptance changes a decision, the affected tests change with it. Phase C as a whole is not complete.
 
 ## Phase D — Provisional media backend
 
