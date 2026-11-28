@@ -8,5 +8,9 @@ license.workspace = true
 [dependencies]
 framelet-core = { path = "../core", version = "0.1.0" }
 
+[dev-dependencies]
+# Same crate, plus the shared port contract suites for tests/contract.rs (ADR-0021).
+framelet-core = { path = "../core", version = "0.1.0", features = ["contract-tests"] }
+
 [lints]
 workspace = true

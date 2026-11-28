@@ -12,7 +12,12 @@ FORBIDDEN_CORE_REFERENCES = (
     "pipewire::",
     "gstreamer::",
     "ffmpeg::",
+    "serde",
+    "toml::",
 )
+# Serialization dependencies are confined to the settings adapter (ADR-0023).
+SERIALIZATION_DEPENDENCIES = frozenset({"serde", "serde_core", "serde_derive", "toml"})
+SERIALIZATION_ADAPTER = ROOT / "crates/settings/Cargo.toml"
 
 
 def fail(message: str) -> None:
@@ -102,6 +107,32 @@ def dependency_names(manifest: dict) -> set[str]:
     return names
 
 
+def check_contract_tests_feature() -> None:
+    """The core's contract fakes may only be enabled for tests (ADR-0021).
+
+    A crate may enable ``framelet-core``'s ``contract-tests`` feature in
+    ``[dev-dependencies]`` only, never in ``[dependencies]`` or
+    ``[build-dependencies]``, so fakes cannot reach a production build.
+    """
+    for root in FIRST_PARTY_CRATES:
+        if not root.exists():
+            continue
+        for manifest_path in root.rglob("Cargo.toml"):
+            if "target" in manifest_path.parts:
+                continue
+            manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+            tables = [manifest, *manifest.get("target", {}).values()]
+            for table in tables:
+                for section in ("dependencies", "build-dependencies"):
+                    spec = table.get(section, {}).get("framelet-core")
+                    if isinstance(spec, dict) and "contract-tests" in spec.get("features", []):
+                        fail(
+                            f"{manifest_path.relative_to(ROOT)} enables framelet-core "
+                            f"'contract-tests' in [{section}]; use [dev-dependencies]"
+                        )
+    print("Contract-test fakes are confined to dev-dependencies.")
+
+
 def check_core_boundary() -> None:
     manifest_path = ROOT / "crates/core/Cargo.toml"
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
@@ -117,6 +148,30 @@ def check_core_boundary() -> None:
     print("Core inward-only dependency boundary verified.")
 
 
+def check_serialization_confined() -> None:
+    """Only the settings adapter may depend on serde or toml (ADR-0023).
+
+    Core settings types therefore cannot derive serde, and no other crate can
+    grow a second persistence format without a reviewed change here.
+    """
+    for root in FIRST_PARTY_CRATES:
+        if not root.exists():
+            continue
+        for manifest_path in root.rglob("Cargo.toml"):
+            if "target" in manifest_path.parts or manifest_path == SERIALIZATION_ADAPTER:
+                continue
+            manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+            found = sorted(dependency_names(manifest) & SERIALIZATION_DEPENDENCIES)
+            if found:
+                fail(
+                    f"{manifest_path.relative_to(ROOT)} depends on {found}; "
+                    "serialization belongs to crates/settings (ADR-0023)"
+                )
+    print("Serialization dependencies are confined to crates/settings.")
+
+
 if __name__ == "__main__":
     check_first_party_crates()
     check_core_boundary()
+    check_contract_tests_feature()
+    check_serialization_confined()

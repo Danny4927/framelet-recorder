@@ -8,7 +8,7 @@ This document defines how Framelet proves that a roadmap phase is **complete** (
 - Each row is assigned to exactly one roadmap phase and names its verification method (section 2), the automated tests that prove it, and the evidence records it needs.
 - A row's state is one of: `open`, `implemented`, `automated-tested`, `ui-integrated`, `real-device-validated`. A row is **verified** when it reaches the state its method requires (for example a real-device row needs `real-device-validated`).
 - A phase is complete only when every row assigned to it is verified. Rows moved to another phase need a roadmap update in the same PR.
-- From roadmap Phase A (criterion A-10) on, `scripts/check-traceability.py` runs in CI and fails if a linked test name does not exist in the workspace or a linked evidence file is missing. Until then the matrix is checked by review.
+- Every normative SPECIFICATION.md item carries its ID inline (`[REQ-<AREA>-<NN>]`). Since roadmap criterion A-10, [`scripts/check-traceability.py`](../../scripts/check-traceability.py) (tested by `scripts/test_check_traceability.py`) runs in the Linux and Windows CI jobs and fails on a malformed or duplicate ID, an invalid phase or state, a tagged ID without a matrix row or a row without a tag, an untagged normative item outside the sections the script lists as informative, a test reference that does not resolve to a `#[test] fn` in the named crate, a missing linked evidence file, or a row at `automated-tested` or higher that cites no test, no workflow link, and no CI job or step (`CI job "linux"`, `CI step "<name>"`) present in `.github/workflows/ci.yml`. Whether a row's state is honest is still checked by review.
 
 ## 2. Verification methods (correctness)
 

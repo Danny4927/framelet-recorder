@@ -1,0 +1,8 @@
+# cargo-mutants configuration (roadmap A-9, ADR-0022).
+# Test code and the test-only contract suites/fakes are not mutated: they are
+# the oracle, not the subject. They compile only under `cfg(test)` or the
+# `contract-tests` feature.
+exclude_globs = [
+    "**/*_tests.rs",
+    "crates/core/src/contract/**",
+]

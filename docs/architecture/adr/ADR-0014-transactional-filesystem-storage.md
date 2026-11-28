@@ -1,7 +1,7 @@
 # ADR-0014: Transactional filesystem recording storage
 
 - **Date:** 17 November 2026
-- **Status:** Accepted for the Phase 3 storage adapter slice
+- **Status:** Accepted for the Phase 3 storage adapter slice; temporary-path hand-off and `abort` semantics amended by ADR-0021 (accepted 28 November 2026)
 - **Related:** ADR-0001, ADR-0002, ADR-0010, ADR-0011, ADR-0012, ADR-0013
 
 ## Context

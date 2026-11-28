@@ -1,8 +1,10 @@
 #![forbid(unsafe_code)]
 //! Transactional local-file storage adapter for the Recording bounded context.
 //!
-//! The adapter reserves an exclusive temporary file, accepts media written by a
-//! separate media adapter, and publishes only after that writer has closed.
+//! The adapter reserves an exclusive temporary file and hands its location to
+//! the application as the reservation's [`OutputTarget`]. The media adapter
+//! writes there; publication requires the [`ClosedOutput`] its `close`
+//! returns, and only for the target this adapter reserved (ADR-0021).
 
 mod fs_ops;
 
@@ -16,7 +18,10 @@ use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
 
-use framelet_core::ports::{MediaSessionId, PortError, RecordingStoragePort};
+use framelet_core::ports::{
+    ClosedOutput, OutputTarget, PortError, RecordingStoragePort, StorageReservation,
+    StorageSessionId,
+};
 use framelet_core::{RecordingArtifact, RecordingConfiguration, RecordingId};
 
 use fs_ops::{FileHandle, FileOperations, StdFileOperations};
@@ -27,14 +32,20 @@ use fs_ops::{FileHandle, FileOperations, StdFileOperations};
 /// One instance owns its active session map and requires exclusive mutable access.
 pub struct FileSystemRecordingStorage {
     output_directory: PathBuf,
-    active: HashMap<MediaSessionId, PendingOutput>,
+    active: HashMap<StorageSessionId, PendingOutput>,
     next_session: u64,
     operations: Box<dyn FileOperations + Send>,
 }
 
 struct PendingOutput {
-    temporary_path: PathBuf,
+    target: OutputTarget,
     final_path: PathBuf,
+}
+
+impl PendingOutput {
+    fn temporary_path(&self) -> &Path {
+        self.target.as_path()
+    }
 }
 
 impl FileSystemRecordingStorage {
@@ -68,14 +79,10 @@ impl FileSystemRecordingStorage {
         })
     }
 
-    /// Returns the temporary candidate path for a prepared session.
-    ///
-    /// The media adapter writes to this path and must close its writer before publish.
-    pub fn temporary_path(&self, session: &MediaSessionId) -> Result<&Path, PortError> {
-        self.active
-            .get(session)
-            .map(|pending| pending.temporary_path.as_path())
-            .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))
+    /// Returns whether `session` is an active (unpublished, unaborted) reservation.
+    #[cfg(test)]
+    pub(crate) fn is_active(&self, session: &StorageSessionId) -> bool {
+        self.active.contains_key(session)
     }
 
     /// Finds interrupted-session candidates without deleting or modifying them.
@@ -157,11 +164,12 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         &mut self,
         recording_id: RecordingId,
         _configuration: &RecordingConfiguration,
-    ) -> Result<MediaSessionId, PortError> {
+    ) -> Result<StorageReservation, PortError> {
         let sequence = self.next_session;
-        let session = MediaSessionId::new(format!("filesystem-{sequence}"))?;
+        let session = StorageSessionId::new(format!("filesystem-{sequence}"))?;
         let (reserved_sequence, temporary_path, final_path) =
             self.reserve_candidate(recording_id, sequence)?;
+        let target = OutputTarget::new(temporary_path)?;
         self.next_session = reserved_sequence
             .checked_add(1)
             .ok_or_else(|| PortError::Failed("storage session identity exhausted".into()))?;
@@ -169,30 +177,41 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         self.active.insert(
             session.clone(),
             PendingOutput {
-                temporary_path,
+                target: target.clone(),
                 final_path,
             },
         );
-        Ok(session)
+        Ok(StorageReservation { session, target })
     }
 
-    fn publish(&mut self, session: &MediaSessionId) -> Result<RecordingArtifact, PortError> {
+    fn publish(
+        &mut self,
+        session: &StorageSessionId,
+        output: ClosedOutput,
+    ) -> Result<RecordingArtifact, PortError> {
         let pending = self
             .active
             .get(session)
             .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
+        // The closed output must be the writer of *this* reservation. A
+        // foreign one could publish another session's (possibly still open)
+        // candidate, so it is rejected before any filesystem call.
+        if output.target() != &pending.target {
+            return Err(PortError::InvalidInput(
+                "closed output does not belong to this storage session".into(),
+            ));
+        }
 
-        // The media writer must be closed by its owner before this call.
         let candidate = self
             .operations
-            .open_existing(&pending.temporary_path)
+            .open_existing(pending.temporary_path())
             .map_err(map_io_error)?;
         self.settle_candidate(candidate).map_err(map_io_error)?;
 
         // Same-filesystem hard-link creation gives atomic visibility and no-replace.
         // It fails closed on filesystems without hard-link support.
         self.operations
-            .hard_link_no_replace(&pending.temporary_path, &pending.final_path)
+            .hard_link_no_replace(pending.temporary_path(), &pending.final_path)
             .map_err(map_io_error)?;
 
         // Construct the application-owned descriptor before committing the
@@ -207,18 +226,21 @@ impl RecordingStoragePort for FileSystemRecordingStorage {
         // the caller can retry cleanup; subsequent publish detects the existing
         // destination and refuses to overwrite it.
         self.operations
-            .remove_file(&pending.temporary_path)
+            .remove_file(pending.temporary_path())
             .map_err(map_io_error)?;
         self.active.remove(session);
         Ok(artifact)
     }
 
-    fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError> {
-        let pending = self
-            .active
-            .get(session)
-            .ok_or_else(|| PortError::InvalidInput("unknown storage session".into()))?;
-        match self.operations.remove_file(&pending.temporary_path) {
+    /// Removes the candidate of an active reservation. A session that is not
+    /// active (already aborted, published, or never issued) owns no candidate
+    /// here, so aborting it succeeds without touching the filesystem; in
+    /// particular a published recording is never removed.
+    fn abort(&mut self, session: &StorageSessionId) -> Result<(), PortError> {
+        let Some(pending) = self.active.get(session) else {
+            return Ok(());
+        };
+        match self.operations.remove_file(pending.temporary_path()) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => return Err(map_io_error(error)),
@@ -268,6 +290,14 @@ mod tests {
         path
     }
 
+    fn closed(reservation: &StorageReservation) -> ClosedOutput {
+        ClosedOutput::new(reservation.target.clone())
+    }
+
+    fn candidate(reservation: &StorageReservation) -> PathBuf {
+        reservation.target.as_path().to_path_buf()
+    }
+
     fn configuration() -> RecordingConfiguration {
         RecordingConfiguration::new(framelet_core::RecordingMode::Screen, false)
             .expect("valid configuration")
@@ -277,22 +307,25 @@ mod tests {
     fn exclusive_candidate_is_published_without_overwrite() {
         let directory = temp_dir("publish");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage
+        let reservation = storage
             .begin(RecordingId::new(7), &configuration())
             .expect("begin");
-        let candidate = storage
-            .temporary_path(&session)
-            .expect("candidate")
-            .to_path_buf();
+        let candidate = candidate(&reservation);
         fs::write(&candidate, b"complete media").expect("write candidate");
-        let artifact = storage.publish(&session).expect("publish");
+        let artifact = storage
+            .publish(&reservation.session, closed(&reservation))
+            .expect("publish");
         let final_path = PathBuf::from(artifact.location());
         assert_eq!(
             fs::read(final_path).expect("read published"),
             b"complete media"
         );
         assert!(!candidate.exists());
-        assert!(storage.publish(&session).is_err());
+        assert!(
+            storage
+                .publish(&reservation.session, closed(&reservation))
+                .is_err()
+        );
         fs::remove_dir_all(directory).expect("cleanup");
     }
 
@@ -303,10 +336,7 @@ mod tests {
         let first = storage
             .begin(RecordingId::new(12), &configuration())
             .expect("first begin");
-        let first_candidate = storage
-            .temporary_path(&first)
-            .expect("first candidate")
-            .to_path_buf();
+        let first_candidate = candidate(&first);
 
         // A stale candidate from a prior process may occupy the next deterministic
         // name. The adapter must reserve a fresh name rather than truncate it.
@@ -315,16 +345,13 @@ mod tests {
         let second = storage
             .begin(RecordingId::new(12), &configuration())
             .expect("retry begin");
-        let second_candidate = storage
-            .temporary_path(&second)
-            .expect("second candidate")
-            .to_path_buf();
+        let second_candidate = candidate(&second);
 
         assert_ne!(first_candidate, second_candidate);
         assert_ne!(second_candidate, second_collision);
         assert_eq!(fs::read(&second_collision).expect("read orphan"), b"orphan");
-        storage.abort(&first).expect("abort first");
-        storage.abort(&second).expect("abort second");
+        storage.abort(&first.session).expect("abort first");
+        storage.abort(&second.session).expect("abort second");
         fs::remove_dir_all(directory).expect("cleanup");
     }
 
@@ -334,22 +361,23 @@ mod tests {
         let existing = directory.join("recording-13-1.framelet");
         fs::write(&existing, b"keep me").expect("seed existing file");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage
+        let reservation = storage
             .begin(RecordingId::new(13), &configuration())
             .expect("begin");
-        let candidate = storage
-            .temporary_path(&session)
-            .expect("candidate")
-            .to_path_buf();
+        let candidate = candidate(&reservation);
         fs::write(&candidate, b"new media").expect("write candidate");
 
-        assert!(storage.publish(&session).is_err());
+        assert!(
+            storage
+                .publish(&reservation.session, closed(&reservation))
+                .is_err()
+        );
         assert_eq!(fs::read(&existing).expect("read existing"), b"keep me");
         assert_eq!(
             fs::read(&candidate).expect("candidate retained"),
             b"new media"
         );
-        storage.abort(&session).expect("abort");
+        storage.abort(&reservation.session).expect("abort");
         fs::remove_dir_all(directory).expect("cleanup");
     }
 
@@ -357,17 +385,19 @@ mod tests {
     fn abort_is_idempotent_when_candidate_was_already_removed() {
         let directory = temp_dir("abort-missing");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage
+        let reservation = storage
             .begin(RecordingId::new(14), &configuration())
             .expect("begin");
-        let candidate = storage
-            .temporary_path(&session)
-            .expect("candidate")
-            .to_path_buf();
+        let candidate = candidate(&reservation);
         fs::remove_file(candidate).expect("remove candidate");
 
-        storage.abort(&session).expect("abort missing candidate");
-        assert!(storage.abort(&session).is_err());
+        storage
+            .abort(&reservation.session)
+            .expect("abort missing candidate");
+        storage
+            .abort(&reservation.session)
+            .expect("abort is idempotent");
+        assert!(!storage.is_active(&reservation.session));
         fs::remove_dir_all(directory).expect("cleanup");
     }
 
@@ -377,15 +407,12 @@ mod tests {
         let existing = directory.join("recording-9-1.framelet");
         fs::write(&existing, b"existing").expect("seed existing file");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage
+        let reservation = storage
             .begin(RecordingId::new(9), &configuration())
             .expect("begin");
-        let candidate = storage
-            .temporary_path(&session)
-            .expect("candidate")
-            .to_path_buf();
+        let candidate = candidate(&reservation);
         fs::write(&candidate, b"incomplete").expect("write partial");
-        storage.abort(&session).expect("abort");
+        storage.abort(&reservation.session).expect("abort");
         assert!(!candidate.exists());
         assert_eq!(fs::read(existing).expect("read existing"), b"existing");
         fs::remove_dir_all(directory).expect("cleanup");
@@ -409,15 +436,16 @@ mod tests {
     fn missing_candidate_cannot_be_published() {
         let directory = temp_dir("missing");
         let mut storage = FileSystemRecordingStorage::new(&directory).expect("storage");
-        let session = storage
+        let reservation = storage
             .begin(RecordingId::new(11), &configuration())
             .expect("begin");
-        let candidate = storage
-            .temporary_path(&session)
-            .expect("candidate")
-            .to_path_buf();
+        let candidate = candidate(&reservation);
         fs::remove_file(candidate).expect("remove candidate");
-        assert!(storage.publish(&session).is_err());
+        assert!(
+            storage
+                .publish(&reservation.session, closed(&reservation))
+                .is_err()
+        );
         fs::remove_dir_all(directory).expect("cleanup");
     }
 

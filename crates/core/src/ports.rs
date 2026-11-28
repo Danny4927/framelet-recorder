@@ -6,11 +6,15 @@
 //! never by UI or real-time device callbacks. Implementations must document their
 //! concrete thread-safety and cancellation guarantees.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use framelet_capture_api::{AudioBlock, SourceDescriptor, SourceId, VideoFrame};
+use framelet_capture_api::{SourceDescriptor, SourceId, SourceKind};
 
-use crate::{RecordingArtifact, RecordingConfiguration, RecordingId, RecordingMode};
+use crate::data_plane::{AudioSink, DataPlaneError, MediaSinks, VideoSink};
+use crate::{RecordingArtifact, RecordingConfiguration, RecordingId};
+
+pub use crate::settings::{LoadedSettings, RecordingSettings, SettingsError, SettingsOrigin};
 
 /// Opaque identity for one opened capture source.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -102,72 +106,226 @@ impl std::fmt::Display for PortError {
 
 impl std::error::Error for PortError {}
 
+impl From<DataPlaneError> for PortError {
+    fn from(error: DataPlaneError) -> Self {
+        Self::InvalidInput(error.to_string())
+    }
+}
+
 /// Screen/window capture port. Methods run on a worker and must be cancellable.
+///
+/// Capture contract shared by all three capture ports (ADR-0020):
+/// - `start` takes ownership of the core-owned sink for this source and
+///   delivers owned payloads to it from the adapter's worker. If `start`
+///   fails, the adapter must have released the sink before returning.
+/// - When the device disappears, the adapter calls `report_source_lost` on
+///   the sink; it never substitutes another source.
+/// - `stop` stops the producer, joins its worker, and releases the sink
+///   before returning. `stop` is idempotent: stopping a session that is not
+///   active (already stopped, lost, or never started) succeeds without effect.
 pub trait ScreenCapturePort: Send {
     /// Enumerates sources without starting capture.
     fn list_sources(&mut self) -> Result<Vec<SourceDescriptor>, PortError>;
     /// Opens the OS-mediated picker and starts the selected source.
-    fn start(&mut self, source: &SelectedSource) -> Result<CaptureSessionId, PortError>;
-    /// Stops the source and releases OS resources. Must be safe to call once.
+    fn start(
+        &mut self,
+        source: &SelectedSource,
+        sink: VideoSink,
+    ) -> Result<CaptureSessionId, PortError>;
+    /// Stops the source and releases OS resources and the sink. Idempotent.
     fn stop(&mut self, session: &CaptureSessionId) -> Result<(), PortError>;
 }
 
 /// Camera capture port. Device selection and native format negotiation stay in the adapter.
+/// Follows the capture contract documented on [`ScreenCapturePort`].
 pub trait CameraCapturePort: Send {
     /// Enumerates available cameras.
     fn list_sources(&mut self) -> Result<Vec<SourceDescriptor>, PortError>;
-    /// Opens the selected camera.
-    fn start(&mut self, source: &SelectedSource) -> Result<CaptureSessionId, PortError>;
-    /// Stops the camera and releases device resources.
+    /// Opens the selected camera and delivers its frames to `sink`.
+    fn start(
+        &mut self,
+        source: &SelectedSource,
+        sink: VideoSink,
+    ) -> Result<CaptureSessionId, PortError>;
+    /// Stops the camera and releases device resources and the sink. Idempotent.
     fn stop(&mut self, session: &CaptureSessionId) -> Result<(), PortError>;
 }
 
-/// Microphone capture port. Device callbacks must remain bounded and non-blocking.
+/// Microphone capture port. Device callbacks must remain bounded and non-blocking;
+/// a consumer worker, not the callback, offers blocks to the sink.
+/// Follows the capture contract documented on [`ScreenCapturePort`].
 pub trait MicrophoneCapturePort: Send {
     /// Enumerates available microphones.
     fn list_sources(&mut self) -> Result<Vec<SourceDescriptor>, PortError>;
     /// Opens the selected microphone with an explicitly negotiated format.
-    fn start(&mut self, source: &SelectedSource) -> Result<CaptureSessionId, PortError>;
-    /// Stops the microphone and joins/drains its worker before returning.
+    fn start(
+        &mut self,
+        source: &SelectedSource,
+        sink: AudioSink,
+    ) -> Result<CaptureSessionId, PortError>;
+    /// Stops the microphone, joins/drains its worker, and releases the sink. Idempotent.
     fn stop(&mut self, session: &CaptureSessionId) -> Result<(), PortError>;
 }
 
-/// Media pipeline port. It accepts owned blocks and must preserve timestamps/order.
+/// Opaque identity for a storage reservation.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct StorageSessionId(String);
+
+impl StorageSessionId {
+    /// Creates a non-empty storage session identity.
+    pub fn new(value: impl Into<String>) -> Result<Self, PortError> {
+        let value = value.into();
+        if value.trim().is_empty() {
+            return Err(PortError::InvalidInput(
+                "storage session id must not be empty".into(),
+            ));
+        }
+        Ok(Self(value))
+    }
+
+    /// Returns the adapter-neutral identity.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Where the media pipeline writes the output of one recording (ADR-0021).
+///
+/// Issued by the storage adapter inside a [`StorageReservation`] and forwarded
+/// unchanged by the application to [`MediaPipelinePort::prepare`]. Core never
+/// opens, inspects, or derives paths from it; it only compares targets.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct OutputTarget(PathBuf);
+
+impl OutputTarget {
+    /// Creates a target from a non-empty location chosen by the storage adapter.
+    pub fn new(location: impl Into<PathBuf>) -> Result<Self, PortError> {
+        let location = location.into();
+        if location.as_os_str().is_empty() {
+            return Err(PortError::InvalidInput(
+                "output target must not be empty".into(),
+            ));
+        }
+        Ok(Self(location))
+    }
+
+    /// Returns the location the media writer must write to.
+    #[must_use]
+    pub fn as_path(&self) -> &Path {
+        &self.0
+    }
+}
+
+/// An exclusive temporary output reserved by storage for one recording.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StorageReservation {
+    /// Storage-side identity used for `publish` and `abort`.
+    pub session: StorageSessionId,
+    /// Where the media pipeline writes; handed to [`MediaPipelinePort::prepare`].
+    pub target: OutputTarget,
+}
+
+/// Proof that the media writer for an [`OutputTarget`] has drained and closed.
+///
+/// [`RecordingStoragePort::publish`] requires it by value, and in the
+/// application flow only [`MediaPipelinePort::close`] produces it. Because
+/// [`ClosedOutput::new`] is public (media adapters live in other crates),
+/// publish-after-close is enforced *by contract plus target check*, not by the
+/// type alone: storage must reject a `ClosedOutput` whose target is not the one
+/// it reserved for the session, and the application checks the target before
+/// publishing. It is not `Clone`: one close permits one publication attempt.
+#[derive(Debug, Eq, PartialEq)]
+pub struct ClosedOutput {
+    target: OutputTarget,
+}
+
+impl ClosedOutput {
+    /// Declares that the writer for `target` has flushed and closed it.
+    ///
+    /// Constructed by media pipeline adapters at the end of a successful
+    /// `close`, and by contract-test harnesses that stand in for a writer.
+    #[must_use]
+    pub const fn new(target: OutputTarget) -> Self {
+        Self { target }
+    }
+
+    /// Returns the target whose writer has closed.
+    #[must_use]
+    pub const fn target(&self) -> &OutputTarget {
+        &self.target
+    }
+}
+
+/// A prepared media pipeline and the sinks its capture sources feed.
+#[derive(Debug)]
+pub struct PreparedMedia {
+    /// Media-side identity used for all further pipeline calls.
+    pub session: MediaSessionId,
+    /// One bounded sink per source the configuration requires (ADR-0020).
+    pub sinks: MediaSinks,
+}
+
+/// Media pipeline port: clock mapping, encoding, muxing, and finalization.
+///
+/// Payloads do not pass through this port; they arrive on the streams the
+/// pipeline created with [`crate::data_plane::media_inputs`]. Before `start`,
+/// the pipeline does not consume from its streams, so sinks fill up to their
+/// capacity and then apply the overload policy.
 pub trait MediaPipelinePort: Send {
-    /// Creates an output pipeline for the requested recording mode.
+    /// Creates an output pipeline writing to `target` and returns the sinks
+    /// for exactly the sources `configuration` requires.
     fn prepare(
         &mut self,
         recording_id: RecordingId,
-        mode: RecordingMode,
-    ) -> Result<MediaSessionId, PortError>;
-    /// Starts accepting media blocks.
+        configuration: &RecordingConfiguration,
+        target: &OutputTarget,
+    ) -> Result<PreparedMedia, PortError>;
+    /// Starts consuming the input streams.
     fn start(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
     /// Pauses media ingestion without discarding already accepted blocks.
     fn pause(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
     /// Resumes media ingestion.
     fn resume(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
-    /// Transfers ownership of a video frame to the pipeline.
-    fn push_video(&mut self, session: &MediaSessionId, frame: VideoFrame) -> Result<(), PortError>;
-    /// Transfers ownership of an audio block to the pipeline.
-    fn push_audio(&mut self, session: &MediaSessionId, block: AudioBlock) -> Result<(), PortError>;
-    /// Stops accepting input and drains all previously accepted media.
+    /// Consumes every stream until it ended and encodes all accepted media.
+    ///
+    /// After an audio stream ended, the pipeline must read its final
+    /// `stats().pending_gap` and account for that trailing loss like a marked
+    /// [`crate::data_plane::AudioGap`]; it is never silently ignored.
     fn drain(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
-    /// Releases pipeline resources after drain or abort.
-    fn close(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
+    /// Finalizes the container, closes the writer, and releases the session.
+    ///
+    /// The session is released whether or not finalization succeeds. Only a
+    /// successful close returns the [`ClosedOutput`] that permits publication.
+    fn close(&mut self, session: &MediaSessionId) -> Result<ClosedOutput, PortError>;
+    /// Releases the pipeline without producing a closed output (cancel and
+    /// rollback). Partial output is left to storage. Idempotent: aborting a
+    /// session that is not active succeeds without effect.
+    fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
 }
 
 /// Storage port. Implementations must use temporary output and publish atomically where supported.
 pub trait RecordingStoragePort: Send {
-    /// Creates an exclusive temporary destination for a recording.
+    /// Reserves an exclusive temporary output for a recording.
     fn begin(
         &mut self,
         recording_id: RecordingId,
         configuration: &RecordingConfiguration,
-    ) -> Result<MediaSessionId, PortError>;
-    /// Flushes and closes a finalized media output, then publishes it.
-    fn publish(&mut self, session: &MediaSessionId) -> Result<RecordingArtifact, PortError>;
-    /// Removes incomplete temporary output; must not delete an existing recording.
-    fn abort(&mut self, session: &MediaSessionId) -> Result<(), PortError>;
+    ) -> Result<StorageReservation, PortError>;
+    /// Publishes the closed output of a reservation under its final name.
+    ///
+    /// Must fail with [`PortError::InvalidInput`], publishing nothing, when
+    /// `output` names another target than the one reserved for `session` or
+    /// when `session` is not an active reservation.
+    fn publish(
+        &mut self,
+        session: &StorageSessionId,
+        output: ClosedOutput,
+    ) -> Result<RecordingArtifact, PortError>;
+    /// Removes incomplete temporary output; must not delete an existing or
+    /// published recording. Idempotent: aborting a session that is not active
+    /// (already aborted, already published, or unknown) succeeds without effect.
+    fn abort(&mut self, session: &StorageSessionId) -> Result<(), PortError>;
 }
 
 /// Monotonic time source used for ordering and elapsed-time measurement.
@@ -176,21 +334,26 @@ pub trait MonotonicClock: Send + Sync {
     fn now(&self) -> Duration;
 }
 
-/// Persisted, user-editable settings relevant to recording.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RecordingSettings {
-    /// Preferred output directory as an opaque user-facing path.
-    pub output_directory: String,
-    /// Whether microphone input is enabled by default where the mode permits it.
-    pub microphone_enabled_by_default: bool,
-}
-
-/// Settings port. Implementations own serialization and platform-specific locations.
+/// Settings port. Implementations own serialization and platform-specific
+/// locations and map their format onto the core settings types (ADR-0023).
+///
+/// Contract (`contract::settings`):
+/// - `load` never fails and never modifies or deletes stored settings. With
+///   nothing stored it returns defaults with [`SettingsOrigin::DefaultsNotStored`];
+///   with unusable stored settings (malformed, unknown schema version, invalid
+///   value, unreadable) it returns defaults with
+///   [`SettingsOrigin::DefaultsAfterError`] carrying the typed reason.
+/// - `save` replaces the stored settings atomically: on success a later `load`
+///   returns exactly `settings`; on failure it returns
+///   [`SettingsError::WriteFailed`] and the previously stored settings are
+///   unchanged and still loadable. It never leaves a partially written file
+///   in place of the settings.
+/// - Methods run on a worker, never on the UI thread or a device callback.
 pub trait RecordingSettingsPort: Send + Sync {
-    /// Loads settings, returning defaults when no settings have been stored.
-    fn load(&self) -> Result<RecordingSettings, PortError>;
-    /// Validates and stores settings.
-    fn save(&self, settings: &RecordingSettings) -> Result<(), PortError>;
+    /// Loads settings, falling back to safe defaults with a typed origin.
+    fn load(&self) -> LoadedSettings;
+    /// Stores already validated settings atomically.
+    fn save(&self, settings: &RecordingSettings) -> Result<(), SettingsError>;
 }
 
 /// Repository port for durable session metadata, not media payloads.
@@ -246,10 +409,13 @@ pub enum RecordingEvent {
         /// Identity of the session that was cancelled.
         recording_id: RecordingId,
     },
-    /// A source was lost during capture.
+    /// A source was lost during capture. Published before the outcome
+    /// (continued degraded, or `Failed`) takes effect.
     SourceLost {
         /// Identity of the session affected by source loss.
         recording_id: RecordingId,
+        /// Kind of the lost source.
+        kind: SourceKind,
         /// Source identity that became unavailable.
         source: SourceId,
     },
@@ -288,6 +454,16 @@ mod tests {
     fn opaque_session_ids_reject_empty_values() {
         assert!(CaptureSessionId::new(" ").is_err());
         assert!(MediaSessionId::new("").is_err());
+        assert!(StorageSessionId::new("\t").is_err());
+        assert!(OutputTarget::new("").is_err());
+    }
+
+    #[test]
+    fn closed_output_names_its_target() {
+        let target = OutputTarget::new("out/candidate.part").unwrap();
+        let closed = ClosedOutput::new(target.clone());
+        assert_eq!(closed.target(), &target);
+        assert_eq!(target.as_path(), Path::new("out/candidate.part"));
     }
 
     #[test]
@@ -303,5 +479,22 @@ mod tests {
     fn metrics_snapshot_defaults_to_zero() {
         assert_eq!(RecordingMetrics::default().rejected_audio_blocks, 0);
         assert_eq!(RecordingMetrics::default().dropped_video_frames, 0);
+    }
+
+    #[test]
+    fn storage_session_id_preserves_value() {
+        assert_eq!(
+            StorageSessionId::new("storage-1").unwrap().as_str(),
+            "storage-1"
+        );
+    }
+
+    #[test]
+    fn port_errors_have_descriptive_messages() {
+        assert_eq!(PortError::StorageExhausted.to_string(), "storage exhausted");
+        assert_eq!(
+            PortError::Failed("disk".into()).to_string(),
+            "adapter operation failed: disk"
+        );
     }
 }

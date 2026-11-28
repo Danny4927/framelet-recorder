@@ -2,7 +2,7 @@
 resolver = "3"
 exclude = ["poc/media-gstreamer"]
 
-members = ["apps/desktop", "crates/capture-api", "crates/core", "crates/storage"]
+members = ["apps/desktop", "crates/capture-api", "crates/core", "crates/settings", "crates/storage"]
 
 [workspace.package]
 version = "0.1.0"

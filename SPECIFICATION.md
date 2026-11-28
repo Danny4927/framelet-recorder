@@ -11,35 +11,35 @@
 
 ## 1. Product definition
 
-Framelet is a small, performant, local-first desktop recorder. It records screen, microphone, webcam, or screen plus webcam to a local file. The application must be simple enough that a user can start a recording with only a few deliberate interactions.
+Framelet is a small, performant, local-first desktop recorder. It records screen, microphone, webcam, or screen plus webcam to a local file. The application must be simple enough that a user can start a recording with only a few deliberate interactions. [REQ-UX-01]
 
 ### 1.1 MVP scope
 
 The MVP includes exactly these four modes:
 
-- **Screen:** capture a user-selected display, window, or source supported by the OS/backend. Microphone audio is optional.
-- **Microphone:** record the selected microphone to a local audio file.
-- **Webcam:** record the selected camera. Microphone audio is optional.
-- **Screen + webcam:** composite the camera into the screen video as a configurable picture-in-picture bubble. Microphone audio is optional.
+- **Screen:** capture a user-selected display, window, or source supported by the OS/backend. Microphone audio is optional. [REQ-MODE-SCREEN] [REQ-LIFE-09]
+- **Microphone:** record the selected microphone to a local audio file. [REQ-MODE-MIC] [REQ-LIFE-08]
+- **Webcam:** record the selected camera. Microphone audio is optional. [REQ-MODE-CAM] [REQ-LIFE-09]
+- **Screen + webcam:** composite the camera into the screen video as a configurable picture-in-picture bubble. Microphone audio is optional. [REQ-MODE-PIP] [REQ-LIFE-09]
 
-System audio is not part of the MVP.
+System audio is not part of the MVP. [REQ-SCOPE-01]
 
 ### 1.2 Explicitly out of scope
 
-No cloud, network, upload, account, authentication, workspace, library, collaboration, comments, reactions, analytics, streaming, browser extension, mobile app, AI, transcription, subtitles, video editing, stitching, or in-app video player.
+No cloud, network, upload, account, authentication, workspace, library, collaboration, comments, reactions, analytics, streaming, browser extension, mobile app, AI, transcription, subtitles, video editing, stitching, or in-app video player. [REQ-SCOPE-02]
 
-The application must not require an internet connection to record.
+The application must not require an internet connection to record. [REQ-SEC-01]
 
 ### 1.3 Product principles
 
-1. Local-first and offline-capable.
-2. Privacy by default; capture starts only after explicit user action.
-3. Minimal UI and low resource consumption.
-4. Rust for first-party application logic.
-5. No first-party `unsafe` Rust code.
-6. No bypassing ownership, borrowing, type, or OS permission mechanisms.
-7. Bounded memory and explicit backpressure.
-8. Errors are visible; recordings must never be silently reported as successful if data was lost or finalization failed.
+1. Local-first and offline-capable. [REQ-SEC-01]
+2. Privacy by default; capture starts only after explicit user action. [REQ-LIFE-13]
+3. Minimal UI and low resource consumption. [REQ-UX-02] [REQ-PERF-01]
+4. Rust for first-party application logic. [REQ-SAFE-03]
+5. No first-party `unsafe` Rust code. [REQ-SAFE-01]
+6. No bypassing ownership, borrowing, type, or OS permission mechanisms. [REQ-SAFE-04]
+7. Bounded memory and explicit backpressure. [REQ-FLOW-01]
+8. Errors are visible; recordings must never be silently reported as successful if data was lost or finalization failed. [REQ-LIFE-04] [REQ-LIFE-07]
 
 ---
 
@@ -47,27 +47,27 @@ The application must not require an internet connection to record.
 
 ### 2.1 Windows
 
-Target Windows 10/11. Prefer Windows Graphics Capture for user-mediated display/window capture. Evaluate the supported Windows API and crate maturity during the capture PoC. Respect Windows camera and microphone privacy controls.
+Target Windows 10/11. Prefer Windows Graphics Capture for user-mediated display/window capture. Evaluate the supported Windows API and crate maturity during the capture PoC. Respect Windows camera and microphone privacy controls. [REQ-PLAT-WIN] [REQ-SAFE-04]
 
 ### 2.2 Linux
 
-Wayland is a first-class target and must use XDG Desktop Portal for user-mediated source selection/permission and PipeWire for capture streams. Do not bypass compositor or portal restrictions.
+Wayland is a first-class target and must use XDG Desktop Portal for user-mediated source selection/permission and PipeWire for capture streams. Do not bypass compositor or portal restrictions. [REQ-PLAT-WAYLAND]
 
-X11 may use a separate backend. X11 support must be documented separately because its security and capture model differs from Wayland.
+X11 may use a separate backend. X11 support must be documented separately because its security and capture model differs from Wayland. [REQ-PLAT-X11]
 
 ### 2.3 macOS
 
-Not supported. Do not add macOS-specific code, dependencies, CI targets, packaging, or documentation promising support.
+Not supported. Do not add macOS-specific code, dependencies, CI targets, packaging, or documentation promising support. [REQ-PLAT-MACOS]
 
 ### 2.4 Platform abstraction
 
-Keep OS-specific capture behind internal Rust traits. The application core must not depend directly on a specific capture crate or native API.
+Keep OS-specific capture behind internal Rust traits. The application core must not depend directly on a specific capture crate or native API. [REQ-SAFE-02]
 
 ---
 
 ## 3. Recommended technology direction
 
-These are candidates, not unconditional dependency approvals. Pin exact versions only after a current review of crates.io, upstream release notes, security advisories, license, maintenance, native dependencies, and unsafe implementation.
+These are candidates, not unconditional dependency approvals. Pin exact versions only after a current review of crates.io, upstream release notes, security advisories, license, maintenance, native dependencies, and unsafe implementation. [REQ-SEC-02]
 
 | Area | Candidate | Notes |
 |---|---|---|
@@ -83,7 +83,7 @@ These are candidates, not unconditional dependency approvals. Pin exact versions
 
 ### 3.1 Technology selection gates
 
-Before adopting a dependency, document:
+Before adopting a dependency, document: [REQ-SEC-02]
 - Current release and maintenance activity.
 - License and redistribution requirements.
 - Known security advisories.
@@ -95,7 +95,7 @@ Before adopting a dependency, document:
 - Packaging and runtime footprint.
 - Failure behavior, cancellation, and device disconnect behavior.
 
-A dependency is not approved merely because it is popular or convenient.
+A dependency is not approved merely because it is popular or convenient. [REQ-SEC-02]
 
 ---
 
@@ -103,7 +103,7 @@ A dependency is not approved merely because it is popular or convenient.
 
 ### 4.1 Main window
 
-The main window should be compact and uncluttered. It contains:
+The main window should be compact and uncluttered. It contains: [REQ-UX-03]
 - Four large mode choices.
 - Microphone selector and enable/disable control.
 - Camera selector when relevant.
@@ -112,47 +112,49 @@ The main window should be compact and uncluttered. It contains:
 - A prominent Start Recording button.
 - Minimal settings for output quality and webcam bubble.
 
-Do not expose advanced codec or pipeline options in the primary view.
+Do not expose advanced codec or pipeline options in the primary view. [REQ-UX-04]
 
 ### 4.2 Recording flow
 
-1. User chooses a mode.
-2. Framelet enumerates available devices and supported formats.
-3. User selects the capture source through the OS-provided picker where applicable.
-4. Required permissions are requested by the OS.
-5. Preview is shown for camera modes.
-6. User explicitly starts recording.
-7. Optional three-second countdown.
-8. Recording status, elapsed time, Pause, Resume, and Stop are shown.
-9. On stop, sources are closed, buffers drained, and the output container finalized.
-10. The UI shows the resulting file path only after successful finalization.
+1. User chooses a mode. [REQ-UX-05]
+2. Framelet enumerates available devices and supported formats. [REQ-DEV-01]
+3. User selects the capture source through the OS-provided picker where applicable. [REQ-CAP-01]
+4. Required permissions are requested by the OS. [REQ-SAFE-04]
+5. Preview is shown for camera modes. [REQ-MODE-CAM]
+6. User explicitly starts recording. [REQ-LIFE-13]
+7. Optional three-second countdown. [REQ-UX-06]
+8. Recording status, elapsed time, Pause, Resume, and Stop are shown. [REQ-UX-07]
+9. On stop, sources are closed, buffers drained, and the output container finalized. [REQ-LIFE-14]
+10. The UI shows the resulting file path only after successful finalization. [REQ-LIFE-03]
 
-The UI must remain responsive while recording. The application must not record before the user presses Start.
+The UI must remain responsive while recording. The application must not record before the user presses Start. [REQ-UX-08] [REQ-LIFE-13]
 
 ### 4.3 Recording controls
 
-- Start
-- Pause
-- Resume
-- Stop
-- Cancel/discard
-- Camera preview
+- Start [REQ-UX-07]
+- Pause [REQ-UX-07]
+- Resume [REQ-UX-07]
+- Stop [REQ-UX-07]
+- Cancel/discard [REQ-LIFE-12]
+- Camera preview [REQ-MODE-CAM]
 
-Stop must be idempotent. Cancel must clearly warn that the current recording will be discarded.
+Stop must be idempotent. Cancel must clearly warn that the current recording will be discarded. [REQ-LIFE-11] [REQ-LIFE-12]
 
 ### 4.4 Webcam bubble
 
 For Screen + webcam:
-- Default position: bottom-right.
-- Default size: approximately 20% of output width.
-- Default source aspect ratio preserved; crop/fit behavior is consistent.
-- Configurable size: small, medium, large.
-- Configurable corner: top-left, top-right, bottom-left, bottom-right.
-- Optional preview mirroring must not mirror the screen.
-- Bubble is composited into the output video.
-- Dynamic repositioning during recording is not required for MVP.
+- Default position: bottom-right. [REQ-PIP-01]
+- Default size: approximately 20% of output width. [REQ-PIP-02]
+- Default source aspect ratio preserved; crop/fit behavior is consistent. [REQ-PIP-03]
+- Configurable size: small, medium, large. [REQ-PIP-04]
+- Configurable corner: top-left, top-right, bottom-left, bottom-right. [REQ-PIP-05]
+- Optional preview mirroring must not mirror the screen. [REQ-PIP-06]
+- Bubble is composited into the output video. [REQ-MODE-PIP]
+- Dynamic repositioning during recording is not required for MVP. *(informative)*
 
 ### 4.5 Suggested defaults
+
+These defaults apply where the selected device and backend support them: [REQ-UX-09]
 
 | Setting | Default |
 |---|---|
@@ -166,21 +168,21 @@ For Screen + webcam:
 | Audio codec | AAC |
 | Screen + webcam bubble | Bottom-right |
 
-Device-supported formats take precedence. The app must never claim a setting is active if the selected device/backend cannot provide it.
+Device-supported formats take precedence. The app must never claim a setting is active if the selected device/backend cannot provide it. [REQ-DEV-02]
 
 ---
 
 ### 4.6 Incremental product delivery
 
-Features must become testable through the running desktop application as soon as a vertical slice is complete. Do not defer all UI wiring to the end of the project. A UI control must invoke a real implemented use case or be visibly unavailable with an explanation; decorative controls and simulated success states are not acceptable. For every capability, distinguish implementation, automated test coverage, UI integration, and real-device validation. Each increment must include a short manual test procedure and preserve already-working UI flows.
+Features must become testable through the running desktop application as soon as a vertical slice is complete. Do not defer all UI wiring to the end of the project. A UI control must invoke a real implemented use case or be visibly unavailable with an explanation; decorative controls and simulated success states are not acceptable. For every capability, distinguish implementation, automated test coverage, UI integration, and real-device validation. Each increment must include a short manual test procedure and preserve already-working UI flows. [REQ-LIFE-10] [REQ-PROC-01]
 
 ### 4.7 Planning and work tracking
 
-Maintain project planning exclusively as Markdown in the Git repository. Do not create GitHub Issues for tasks, bugs, backlog items, or phase tracking. The roadmap and architecture/specification documents are the source of truth; update them through normal reviewed Git changes. Pull requests are used for reviewing and delivering implementation changes.
+Maintain project planning exclusively as Markdown in the Git repository. Do not create GitHub Issues for tasks, bugs, backlog items, or phase tracking. The roadmap and architecture/specification documents are the source of truth; update them through normal reviewed Git changes. Pull requests are used for reviewing and delivering implementation changes. [REQ-PROC-02]
 
 ## 5. Architecture
 
-Use a modular Rust workspace and a Rust-first application core. No backend or services.
+Use a modular Rust workspace and a Rust-first application core. No backend or services. [REQ-ARCH-01]
 
 Suggested layout:
 
@@ -204,13 +206,15 @@ framelet-recorder/
     ├── capture-audio/
     ├── media-pipeline/
     ├── storage/
-    ├── config/
+    ├── settings/
     └── platform/
 ```
 
-Create workspace members only when they contain valid manifests and buildable code; do not commit a knowingly broken placeholder workspace.
+Create workspace members only when they contain valid manifests and buildable code; do not commit a knowingly broken placeholder workspace. [REQ-ARCH-02]
 
 ### 5.1 Module responsibilities
+
+Each module has the following responsibility: [REQ-ARCH-05]
 
 | Module | Responsibility |
 |---|---|
@@ -222,16 +226,16 @@ Create workspace members only when they contain valid manifests and buildable co
 | capture-audio | Microphone enumeration and audio capture |
 | media-pipeline | Timestamping, compositing, encoding, muxing |
 | storage | Safe local file creation/finalization |
-| config | Validated local settings |
+| settings | Validated local settings (TOML file adapter, ADR-0023) |
 | platform | OS-specific integration and capability detection |
 
-UI code must not perform capture, encoding, disk I/O, or blocking device enumeration.
+UI code must not perform capture, encoding, disk I/O, or blocking device enumeration. [REQ-ARCH-03]
 
 ### 5.2 Capture interfaces
 
-Define narrow, safe traits for capture lifecycle and events. Prefer event streams/channels over blocking UI calls. All frames must have clear ownership; no borrowed pointer may outlive the source buffer.
+Define narrow, safe traits for capture lifecycle and events. Prefer event streams/channels over blocking UI calls. All frames must have clear ownership; no borrowed pointer may outlive the source buffer. [REQ-CAP-02]
 
-Frame metadata must include:
+Frame metadata must include: [REQ-CAP-03]
 - Width and height.
 - Stride/row pitch.
 - Pixel format.
@@ -239,14 +243,16 @@ Frame metadata must include:
 - Sequence number.
 - Owned pixel data or a safe, lifetime-bound buffer abstraction.
 
-Audio blocks must include:
+Audio blocks must include: [REQ-CAP-04]
 - Sample rate.
 - Channel count.
 - Sample format.
 - Monotonic timestamp/sample position.
 - Owned or safely borrowed sample storage with explicit lifetime.
 
-Validate all dimensions, strides, lengths, and arithmetic before allocating or processing buffers. Use checked arithmetic.
+Validate all dimensions, strides, lengths, and arithmetic before allocating or processing buffers. Use checked arithmetic. [REQ-CAP-05]
+
+The configured maximum video frame size is 8K UHD: width and height must each be at most 7680 pixels, and width × height must be at most 7680 × 4320 = 33,177,600 pixels, so landscape (7680 × 4320) and portrait (4320 × 7680) 8K frames are accepted while 7680 × 7680 is not. Larger frames are rejected with a typed error (`CaptureError::VideoFrameTooLarge`) before any size arithmetic. Capture adapters must apply the same limit (`validate_frame_dimensions`) in their conversion function before allocating a frame buffer; this adapter-side check is delivered with the Phase E capture adapters. [REQ-CAP-06]
 
 ### 5.3 State machine
 
@@ -261,7 +267,7 @@ Idle -> Preparing -> Ready -> Recording <-> Paused
                            Completed      Failed
 ```
 
-Additional typed errors include:
+Additional typed errors include: [REQ-ERR-01]
 - PermissionDenied
 - SourceSelectionCancelled
 - DeviceUnavailable
@@ -272,19 +278,19 @@ Additional typed errors include:
 - UnsupportedFormat
 - PipelineOverrun
 
-Only the core owns the state machine. UI reflects state events and cannot mutate state independently.
+Only the core owns the state machine. UI reflects state events and cannot mutate state independently. [REQ-LIFE-01] [REQ-LIFE-02]
 
 ### 5.4 Threading and backpressure
 
-- UI event loop remains non-blocking.
-- Screen capture, camera capture, media processing, and storage run outside the UI thread.
-- Audio callbacks must be real-time safe: no blocking, filesystem/network I/O, mutex waits, or expensive allocations.
-- Transfer audio using a bounded single-producer/single-consumer ring buffer where suitable.
-- Use bounded channels for video and control events.
-- Never allow queues to grow without limit.
-- Video may drop stale frames under overload, but drops must be counted and surfaced.
-- Audio loss must be detected and reported; never silently conceal it.
-- Shutdown and cancellation must propagate to every worker and release all capture resources.
+- UI event loop remains non-blocking. [REQ-UX-08]
+- Screen capture, camera capture, media processing, and storage run outside the UI thread. [REQ-ARCH-04]
+- Audio callbacks must be real-time safe: no blocking, filesystem/network I/O, mutex waits, or expensive allocations. [REQ-FLOW-04]
+- Transfer audio using a bounded single-producer/single-consumer ring buffer where suitable. [REQ-FLOW-05]
+- Use bounded channels for video and control events. [REQ-FLOW-01]
+- Never allow queues to grow without limit. [REQ-FLOW-01]
+- Video may drop stale frames under overload, but drops must be counted and surfaced. [REQ-FLOW-02]
+- Audio loss must be detected and reported; never silently conceal it. [REQ-FLOW-03]
+- Shutdown and cancellation must propagate to every worker and release all capture resources. [REQ-LIFE-06]
 
 ---
 
@@ -292,66 +298,77 @@ Only the core owns the state machine. UI reflects state events and cannot mutate
 
 ### 6.1 Modes
 
-- Screen: screen video plus optional microphone.
-- Microphone: audio-only output.
-- Webcam: camera video plus optional microphone.
-- Screen + webcam: screen and camera composed into one video plus optional microphone.
+- Screen: screen video plus optional microphone. [REQ-MODE-SCREEN] [REQ-LIFE-09]
+- Microphone: audio-only output. [REQ-MODE-MIC]
+- Webcam: camera video plus optional microphone. [REQ-MODE-CAM] [REQ-LIFE-09]
+- Screen + webcam: screen and camera composed into one video plus optional microphone. [REQ-MODE-PIP] [REQ-LIFE-09]
 
 ### 6.2 Synchronization
 
-Use a monotonic clock. At recording start define a common origin T0. Map source timestamps onto a shared presentation timeline. Do not use wall-clock time as the synchronization source.
+Use a monotonic clock. At recording start define a common origin T0. Map source timestamps onto a shared presentation timeline. Do not use wall-clock time as the synchronization source. [REQ-TIME-01]
 
 Requirements:
-- Preserve source timestamps where possible.
-- Handle variable frame rate and dropped frames.
-- Keep audio sample position and timestamps consistent.
-- Remove paused duration from the final timeline.
-- Detect timestamp discontinuities and clock drift.
-- Test A/V sync over long recordings.
+- Preserve source timestamps where possible. [REQ-TIME-06]
+- Handle variable frame rate and dropped frames. [REQ-TIME-07]
+- Keep audio sample position and timestamps consistent. [REQ-TIME-08]
+- Remove paused duration from the final timeline. [REQ-TIME-02]
+- Detect timestamp discontinuities and clock drift. [REQ-TIME-03] [REQ-TIME-09]
+- Test A/V sync over long recordings. [REQ-TIME-05]
 
 ### 6.3 Encoding and containers
 
 Preferred output:
-- Video: MP4/H.264.
-- Audio: AAC in MP4/M4A.
-- Microphone-only: M4A/AAC.
+- Video: MP4/H.264. [REQ-MEDIA-01]
+- Audio: AAC in MP4/M4A. [REQ-MEDIA-02]
+- Microphone-only: M4A/AAC. [REQ-MODE-MIC] [REQ-MEDIA-02]
 
-Hardware encoding may be preferred when it is available, supported, and stable. A software encoder fallback is required. Never assume a hardware encoder exists.
+Hardware encoding may be preferred when it is available, supported, and stable. A software encoder fallback is required. Never assume a hardware encoder exists. [REQ-MEDIA-03]
 
-The GStreamer pipeline and required plugins must be tested and packaged explicitly for each supported OS. Do not dynamically load arbitrary plugins from user-writable directories. A completed file must not be reported until the container is finalized successfully.
+The GStreamer pipeline and required plugins must be tested and packaged explicitly for each supported OS. Do not dynamically load arbitrary plugins from user-writable directories. A completed file must not be reported until the container is finalized successfully. [REQ-MEDIA-04] [REQ-SEC-03] [REQ-LIFE-03]
 
 ### 6.4 Compositing
 
-For Screen + webcam, composite the camera into the screen frame. Preserve aspect ratio, use a deterministic fit/crop policy, and avoid unnecessary frame copies. GPU compositing may be used only through safe, reviewed APIs and only if it does not compromise portability or reliability.
+For Screen + webcam, composite the camera into the screen frame. Preserve aspect ratio, use a deterministic fit/crop policy, and avoid unnecessary frame copies. GPU compositing may be used only through safe, reviewed APIs and only if it does not compromise portability or reliability. [REQ-PIP-03] [REQ-PIP-07]
 
 ---
 
 ## 7. Local storage
 
 Default output directory:
-- Windows: user's Videos/Framelet directory.
-- Linux: user's Videos/Framelet directory, resolved using standard user-directory conventions.
+- Windows: user's Videos/Framelet directory. [REQ-STOR-06]
+- Linux: user's Videos/Framelet directory, resolved using standard user-directory conventions. [REQ-STOR-06]
 
 Requirements:
-- User can select another directory.
-- Never overwrite an existing recording.
-- Use collision-resistant generated filenames.
-- Create temporary output files exclusively.
-- Finalize and rename only after successful muxer/container close.
-- Validate paths and handle symlinks carefully.
-- Do not invoke a shell to create files or directories.
-- Do not accept arbitrary path fragments from untrusted metadata.
-- Restrict file permissions to the current user where supported.
-- Detect low disk space and write failures.
-- On startup, identify incomplete temporary recordings and offer safe recovery/discard where possible.
+- User can select another directory. [REQ-STOR-04]
+- Never overwrite an existing recording. [REQ-STOR-01]
+- Use collision-resistant generated filenames. [REQ-STOR-07]
+- Create temporary output files exclusively. [REQ-STOR-02]
+- Finalize and rename only after successful muxer/container close. [REQ-STOR-02]
+- Validate paths and handle symlinks carefully. [REQ-STOR-08]
+- Do not invoke a shell to create files or directories. [REQ-STOR-09]
+- Do not accept arbitrary path fragments from untrusted metadata. [REQ-STOR-10]
+- Restrict file permissions to the current user where supported. [REQ-STOR-11]
+- Detect low disk space and write failures. [REQ-STOR-05]
+- On startup, identify incomplete temporary recordings and offer safe recovery/discard where possible. [REQ-STOR-03]
 
-A crash or power failure cannot be guaranteed to preserve a valid MP4. Recovery behavior must be documented and tested.
+A crash or power failure cannot be guaranteed to preserve a valid MP4. Recovery behavior must be documented and tested. [REQ-STOR-12]
+
+### 7.1 Settings
+
+*Provisional:* the requirements in this section follow the maintainer decision of 28 November 2026; the schema, defaults, and value ranges they refer to are proposed in ADR-0023 and are not final until it is accepted. *(informative)*
+
+User-editable recording settings are stored locally in one TOML file: on Linux `$XDG_CONFIG_HOME/framelet/settings.toml`, falling back to `$HOME/.config/framelet/settings.toml`; on Windows `%APPDATA%\Framelet\settings.toml`. The location is resolved from these environment variables; if it cannot be resolved, defaults are used and the error is shown. [REQ-CFG-01]
+
+- The file carries a schema version. A missing or unknown version is reported with a typed error and the file is not interpreted. [REQ-CFG-02]
+- Missing settings load as safe defaults without an error. Unreadable, malformed, unknown-version, or invalid settings load as safe defaults together with a typed error that is shown to the user; loading never modifies or deletes the stored file. [REQ-CFG-03]
+- Setting values are validated by the core against documented ranges; out-of-range values are rejected, never silently clamped. [REQ-CFG-04]
+- Settings are written atomically (temporary file in the same directory, then rename). A failed write reports a typed error and leaves the previously stored settings intact; a partially written file never replaces them. Loading and saving never panic. [REQ-CFG-05]
 
 ---
 
 ## 8. Performance goals
 
-These are targets to measure, not guarantees:
+These are targets to measure, not guarantees: [REQ-PERF-01]
 
 | Metric | Target |
 |---|---|
@@ -360,28 +377,28 @@ These are targets to measure, not guarantees:
 | Output | Up to 1080p30 |
 | UI responsiveness | <100 ms for ordinary interactions |
 | Start latency | <2 seconds after source/permission selection, excluding OS picker delay |
-| A/V sync | <100 ms under supported configurations |
+| A/V sync | <100 ms under supported configurations [REQ-TIME-04] |
 | Memory growth | Bounded during long recordings |
 | CPU | Hardware encoding preferred when available |
 
-Measure full process RSS, including native libraries and plugins. Publish benchmark hardware, OS, codec, and settings. If a target cannot be met, document the result rather than hiding it.
+Measure full process RSS, including native libraries and plugins. Publish benchmark hardware, OS, codec, and settings. If a target cannot be met, document the result rather than hiding it. [REQ-PERF-01]
 
 ---
 
 ## 9. Error handling
 
-Errors must be typed, actionable, and visible. No silent failure.
+Errors must be typed, actionable, and visible. No silent failure. [REQ-LIFE-07] [REQ-ERR-02]
 
 Examples:
-- Permission denied: explain which OS permission is required and where to enable it.
-- Source selection cancelled: return to Ready without starting.
-- Camera disconnected: stop safely or continue only if the active mode remains valid and the user is informed.
-- Microphone disconnected: report the loss; do not silently produce a falsely complete recording.
-- Disk full: stop safely, attempt finalization, preserve recoverable data.
-- Encoder failure: stop pipeline and report whether output is recoverable.
-- Queue overrun: count drops and surface degraded recording quality.
+- Permission denied: explain which OS permission is required and where to enable it. [REQ-ERR-03]
+- Source selection cancelled: return to Ready without starting. [REQ-ERR-04]
+- Camera disconnected: stop safely or continue only if the active mode remains valid and the user is informed. [REQ-ERR-05]
+- Microphone disconnected: report the loss; do not silently produce a falsely complete recording. [REQ-ERR-06]
+- Disk full: stop safely, attempt finalization, preserve recoverable data. [REQ-LIFE-05] [REQ-STOR-05]
+- Encoder failure: stop pipeline and report whether output is recoverable. [REQ-ERR-07]
+- Queue overrun: count drops and surface degraded recording quality. [REQ-FLOW-02]
 
-Avoid panics in production paths. Do not use `unwrap()` or `expect()` on fallible runtime operations.
+Avoid panics in production paths. Do not use `unwrap()` or `expect()` on fallible runtime operations. [REQ-SAFE-06]
 
 ---
 
@@ -389,11 +406,11 @@ Avoid panics in production paths. Do not use `unwrap()` or `expect()` on fallibl
 
 ### 10.1 Unit tests
 
-Test state transitions, path validation, filename collisions, settings validation, timestamp mapping, checked buffer calculations, queue limits, and error mapping.
+Test state transitions, path validation, filename collisions, settings validation, timestamp mapping, checked buffer calculations, queue limits, and error mapping. [REQ-TEST-01]
 
 ### 10.2 Integration tests
 
-On every supported OS:
+On every supported OS: [REQ-TEST-02]
 - Screen recording.
 - Microphone-only recording.
 - Webcam recording.
@@ -409,7 +426,7 @@ On every supported OS:
 
 ### 10.3 Acceptance criteria
 
-MVP is complete only when all four modes produce valid local files, the app works offline, permissions are respected, no existing file is overwritten, UI remains responsive, memory remains bounded, errors are visible, and security/CI checks pass.
+MVP is complete only when all four modes produce valid local files, the app works offline, permissions are respected, no existing file is overwritten, UI remains responsive, memory remains bounded, errors are visible, and security/CI checks pass. [REQ-ACC-01]
 
 ---
 

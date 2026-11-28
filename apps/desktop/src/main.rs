@@ -23,6 +23,12 @@ fn display_path(path: &std::path::Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// Composition root use of the storage adapter: only the orphan scan for now.
+///
+/// When recording is wired (roadmap Phase C) the adapters go into
+/// `RecordingPorts` unchanged: the media adapter receives its output target
+/// from the storage reservation through the core (ADR-0021), so this root
+/// never reaches into adapter internals such as temporary paths.
 fn scan_recovery(directory: PathBuf) -> Result<Vec<PathBuf>, PortError> {
     FileSystemRecordingStorage::new(directory)?.find_orphaned_temporary_files()
 }

@@ -109,6 +109,21 @@ impl RecordingConfiguration {
             }
         }
     }
+    /// Decides what losing a source of `kind` during capture means for the recording.
+    ///
+    /// Losing a source the mode itself records (screen, camera, or the
+    /// microphone in microphone-only mode) makes the configured recording
+    /// impossible, so it must stop. Losing the *optional* microphone leaves the
+    /// mode valid: capture continues, and the loss is recorded on the session.
+    #[must_use]
+    pub const fn source_loss_outcome(&self, kind: SourceKind) -> SourceLossOutcome {
+        match (kind, self.mode) {
+            (SourceKind::Microphone, mode) if !matches!(mode, RecordingMode::Microphone) => {
+                SourceLossOutcome::ContinueWithout
+            }
+            _ => SourceLossOutcome::StopRecording,
+        }
+    }
     /// Checks that exactly the required source kinds were selected.
     ///
     /// `selected` reports, for each kind, whether the user selected a source of it.
@@ -129,6 +144,16 @@ impl RecordingConfiguration {
         }
         Ok(())
     }
+}
+
+/// Consequence of losing a capture source while recording.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SourceLossOutcome {
+    /// The mode stays valid without the source; capture continues degraded.
+    ContinueWithout,
+    /// The mode cannot be recorded without the source; the recording stops
+    /// and must not be reported as complete.
+    StopRecording,
 }
 
 /// A finalized recording output descriptor owned by the application.
@@ -159,6 +184,7 @@ pub struct RecordingSession {
     configuration: RecordingConfiguration,
     state: RecordingState,
     artifact: Option<RecordingArtifact>,
+    lost_sources: Vec<SourceKind>,
 }
 
 impl RecordingSession {
@@ -170,6 +196,7 @@ impl RecordingSession {
             configuration,
             state: RecordingState::Idle,
             artifact: None,
+            lost_sources: Vec::new(),
         }
     }
     /// Returns the session identity.
@@ -191,6 +218,38 @@ impl RecordingSession {
     #[must_use]
     pub const fn artifact(&self) -> Option<&RecordingArtifact> {
         self.artifact.as_ref()
+    }
+    /// Returns the sources lost during capture, in the order they were lost.
+    ///
+    /// A completed session with lost sources is a degraded recording.
+    #[must_use]
+    pub fn lost_sources(&self) -> &[SourceKind] {
+        &self.lost_sources
+    }
+    /// Records that a capture source was lost and returns what that means.
+    ///
+    /// Only sources the configuration records can be lost, and only while
+    /// capturing or finalizing. Recording the same loss twice is a no-op.
+    pub fn record_source_loss(
+        &mut self,
+        kind: SourceKind,
+    ) -> Result<SourceLossOutcome, DomainError> {
+        if !matches!(
+            self.state,
+            RecordingState::Recording | RecordingState::Paused | RecordingState::Finalizing
+        ) {
+            return Err(DomainError::UnexpectedState {
+                expected: RecordingState::Recording,
+                actual: self.state,
+            });
+        }
+        if !self.configuration.requires_source(kind) {
+            return Err(DomainError::UnexpectedSource(kind));
+        }
+        if !self.lost_sources.contains(&kind) {
+            self.lost_sources.push(kind);
+        }
+        Ok(self.configuration.source_loss_outcome(kind))
     }
     /// Moves the session to preparing.
     pub fn begin_preparation(&mut self) -> Result<(), DomainError> {
@@ -264,6 +323,7 @@ impl RecordingSession {
             });
         }
         self.artifact = None;
+        self.lost_sources.clear();
         self.state = RecordingState::Idle;
         Ok(())
     }
@@ -481,10 +541,144 @@ mod tests {
     }
 
     #[test]
+    fn source_loss_outcome_depends_on_mode() {
+        use SourceLossOutcome::{ContinueWithout, StopRecording};
+        let cases = [
+            (
+                RecordingMode::Screen,
+                true,
+                SourceKind::Screen,
+                StopRecording,
+            ),
+            (
+                RecordingMode::Screen,
+                true,
+                SourceKind::Microphone,
+                ContinueWithout,
+            ),
+            (
+                RecordingMode::Microphone,
+                false,
+                SourceKind::Microphone,
+                StopRecording,
+            ),
+            (
+                RecordingMode::Webcam,
+                true,
+                SourceKind::Camera,
+                StopRecording,
+            ),
+            (
+                RecordingMode::Webcam,
+                true,
+                SourceKind::Microphone,
+                ContinueWithout,
+            ),
+            (
+                RecordingMode::ScreenAndWebcam,
+                true,
+                SourceKind::Screen,
+                StopRecording,
+            ),
+            (
+                RecordingMode::ScreenAndWebcam,
+                true,
+                SourceKind::Camera,
+                StopRecording,
+            ),
+            (
+                RecordingMode::ScreenAndWebcam,
+                true,
+                SourceKind::Microphone,
+                ContinueWithout,
+            ),
+        ];
+        for (mode, microphone, kind, expected) in cases {
+            assert_eq!(
+                config(mode, microphone).source_loss_outcome(kind),
+                expected,
+                "{mode:?} microphone={microphone} lost {kind:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn aggregate_records_source_loss_only_while_capturing_and_for_used_sources() {
+        let mut session =
+            RecordingSession::new(RecordingId::new(1), config(RecordingMode::Screen, true));
+        assert!(session.record_source_loss(SourceKind::Microphone).is_err());
+        session.begin_preparation().unwrap();
+        session.mark_ready().unwrap();
+        assert!(session.record_source_loss(SourceKind::Microphone).is_err());
+        session.start().unwrap();
+        assert_eq!(
+            session.record_source_loss(SourceKind::Camera),
+            Err(DomainError::UnexpectedSource(SourceKind::Camera))
+        );
+        assert_eq!(
+            session.record_source_loss(SourceKind::Microphone),
+            Ok(SourceLossOutcome::ContinueWithout)
+        );
+        session.pause().unwrap();
+        assert_eq!(
+            session.record_source_loss(SourceKind::Microphone),
+            Ok(SourceLossOutcome::ContinueWithout)
+        );
+        assert_eq!(session.lost_sources(), [SourceKind::Microphone]);
+        session.begin_finalization().unwrap();
+        assert_eq!(
+            session.record_source_loss(SourceKind::Screen),
+            Ok(SourceLossOutcome::StopRecording)
+        );
+        assert_eq!(
+            session.lost_sources(),
+            [SourceKind::Microphone, SourceKind::Screen]
+        );
+        session.fail().unwrap();
+        assert!(session.record_source_loss(SourceKind::Screen).is_err());
+        session.reset().unwrap();
+        assert!(session.lost_sources().is_empty());
+    }
+
+    #[test]
     fn empty_artifact_location_is_rejected() {
         assert_eq!(
             RecordingArtifact::new("  ".into()),
             Err(DomainError::EmptyArtifactLocation)
+        );
+    }
+
+    #[test]
+    fn recording_id_and_configuration_expose_their_values() {
+        assert_eq!(RecordingId::new(42).value(), 42);
+        assert!(config(RecordingMode::Screen, true).includes_microphone());
+        assert!(!config(RecordingMode::Screen, false).includes_microphone());
+    }
+
+    #[test]
+    fn resume_returns_a_paused_session_to_recording() {
+        let mut session =
+            RecordingSession::new(RecordingId::new(1), config(RecordingMode::Screen, false));
+        session.begin_preparation().unwrap();
+        session.mark_ready().unwrap();
+        session.start().unwrap();
+        session.pause().unwrap();
+        session.resume().unwrap();
+        assert_eq!(session.state(), RecordingState::Recording);
+        assert_eq!(
+            session.resume(),
+            Err(DomainError::InvalidTransition {
+                from: RecordingState::Recording,
+                to: RecordingState::Recording,
+            })
+        );
+    }
+
+    #[test]
+    fn domain_errors_have_descriptive_messages() {
+        assert_eq!(
+            DomainError::MissingSource(SourceKind::Camera).to_string(),
+            "recording configuration requires a Camera source"
         );
     }
 }

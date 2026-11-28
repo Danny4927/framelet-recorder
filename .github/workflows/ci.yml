@@ -36,6 +36,10 @@ jobs:
         run: python scripts/check-architecture.py
       - name: Check documentation structure and local links
         run: python scripts/check-docs.py
+      - name: Test the traceability checker
+        run: python scripts/test_check_traceability.py
+      - name: Check requirement traceability
+        run: python scripts/check-traceability.py
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
@@ -103,6 +107,10 @@ jobs:
         run: python scripts/check-architecture.py
       - name: Check documentation structure and local links
         run: python scripts/check-docs.py
+      - name: Test the traceability checker
+        run: python scripts/test_check_traceability.py
+      - name: Check requirement traceability
+        run: python scripts/check-traceability.py
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
       - run: cargo test --workspace --locked
@@ -126,13 +134,51 @@ jobs:
       - name: Install cargo-audit and cargo-deny (prebuilt binaries)
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-audit,cargo-deny
+          tool: cargo-audit,cargo-deny,cargo-vet
       - name: Audit RustSec advisories
         # Deny unsound advisories and vulnerabilities; report unmaintained
         # transitive crates without failing when no fixed upgrade exists.
         run: cargo audit --deny unsound
       - name: Check licenses, sources, bans and advisories
         run: cargo deny check
+      - name: Check supply-chain audits and exemptions
+        run: cargo vet --locked
+
+  mutants:
+    # Mutation testing of framelet-core (roadmap A-9, ADR-0022). Pull requests
+    # test only mutants in their diff; main and manual runs test everything.
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-mutants (prebuilt binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-mutants@27.1.0
+      - name: Mutate changed core code
+        if: github.event_name == 'pull_request'
+        run: |
+          git diff "origin/${{ github.base_ref }}...HEAD" -- crates/core > core.diff
+          if [ ! -s core.diff ]; then
+            echo "No changes under crates/core; skipping mutation testing."
+            exit 0
+          fi
+          cargo mutants -p framelet-core --in-diff core.diff -j 2
+      - name: Mutate all core code
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        run: cargo mutants -p framelet-core -j 2
+      - name: Upload mutation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-out
+          path: mutants.out/
+          if-no-files-found: ignore
+          retention-days: 7
 
   coverage:
     runs-on: ubuntu-24.04
