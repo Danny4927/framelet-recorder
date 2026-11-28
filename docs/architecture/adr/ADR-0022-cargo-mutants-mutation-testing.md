@@ -1,7 +1,7 @@
 # ADR-0022: Mutation testing of `framelet-core` with cargo-mutants
 
 - **Date:** 27 November 2026
-- **Status:** Proposed — implemented for review; a human maintainer must accept it
+- **Status:** Accepted — 28 November 2026, decided by the maintainer. Roadmap A-9 still needs a mutation run on a committed SHA (CI full run on `main`)
 - **Related:** roadmap criterion A-9; [quality gates](../quality-gates.md); ADR-0021 (contract suites)
 
 ## Context

@@ -252,6 +252,8 @@ Audio blocks must include: [REQ-CAP-04]
 
 Validate all dimensions, strides, lengths, and arithmetic before allocating or processing buffers. Use checked arithmetic. [REQ-CAP-05]
 
+The configured maximum video frame size is 8K UHD: width and height must each be at most 7680 pixels, and width × height must be at most 7680 × 4320 = 33,177,600 pixels, so landscape (7680 × 4320) and portrait (4320 × 7680) 8K frames are accepted while 7680 × 7680 is not. Larger frames are rejected with a typed error (`CaptureError::VideoFrameTooLarge`) before any size arithmetic. Capture adapters must apply the same limit (`validate_frame_dimensions`) in their conversion function before allocating a frame buffer; this adapter-side check is delivered with the Phase E capture adapters. [REQ-CAP-06]
+
 ### 5.3 State machine
 
 States:

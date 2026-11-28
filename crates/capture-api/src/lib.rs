@@ -84,6 +84,21 @@ pub struct VideoFrameMetadata {
     pub sequence: u64,
 }
 
+/// Largest accepted frame width or height in pixels (8K UHD long side).
+///
+/// Both dimensions must be at most this value, so a portrait 8K frame
+/// (4320 x 7680) is accepted as well as a landscape one.
+pub const MAX_FRAME_WIDTH: u32 = 7680;
+
+/// Height of the largest accepted landscape frame (8K UHD short side).
+///
+/// It is not a per-axis limit on its own: it bounds the pixel count together
+/// with [`MAX_FRAME_WIDTH`] (see [`MAX_FRAME_PIXELS`]).
+pub const MAX_FRAME_HEIGHT: u32 = 4320;
+
+/// Largest accepted pixel count per frame: `MAX_FRAME_WIDTH * MAX_FRAME_HEIGHT`.
+pub const MAX_FRAME_PIXELS: u64 = MAX_FRAME_WIDTH as u64 * MAX_FRAME_HEIGHT as u64;
+
 /// Owned video frame. Data length must cover stride multiplied by height.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct VideoFrame {
@@ -95,10 +110,12 @@ pub struct VideoFrame {
 
 impl VideoFrame {
     /// Creates a frame after validating dimensions, stride, and buffer length.
+    ///
+    /// Dimensions are checked against the 8K limit before any size
+    /// arithmetic: each of width and height must be at most
+    /// [`MAX_FRAME_WIDTH`] and their product at most [`MAX_FRAME_PIXELS`].
     pub fn new(metadata: VideoFrameMetadata, data: Vec<u8>) -> Result<Self, CaptureError> {
-        if metadata.width == 0 || metadata.height == 0 {
-            return Err(CaptureError::InvalidVideoDimensions);
-        }
+        validate_frame_dimensions(metadata.width, metadata.height)?;
 
         let minimum_stride = metadata
             .width
@@ -124,6 +141,26 @@ impl VideoFrame {
 
         Ok(Self { metadata, data })
     }
+}
+
+/// Validates frame dimensions: non-zero, each at most [`MAX_FRAME_WIDTH`],
+/// and pixel count at most [`MAX_FRAME_PIXELS`].
+///
+/// Adapter conversion functions call this before allocating a frame buffer.
+pub fn validate_frame_dimensions(width: u32, height: u32) -> Result<(), CaptureError> {
+    if width == 0 || height == 0 {
+        return Err(CaptureError::InvalidVideoDimensions);
+    }
+    if width > MAX_FRAME_WIDTH || height > MAX_FRAME_WIDTH {
+        return Err(CaptureError::VideoFrameTooLarge);
+    }
+    let pixels = u64::from(width)
+        .checked_mul(u64::from(height))
+        .ok_or(CaptureError::VideoFrameTooLarge)?;
+    if pixels > MAX_FRAME_PIXELS {
+        return Err(CaptureError::VideoFrameTooLarge);
+    }
+    Ok(())
 }
 
 /// Interleaved floating-point audio samples with one timestamp for the first frame.
@@ -190,6 +227,9 @@ pub enum CaptureError {
     UnsupportedFormat,
     /// Video dimensions were zero.
     InvalidVideoDimensions,
+    /// Video dimensions exceed the 8K limit: a side above `MAX_FRAME_WIDTH`
+    /// or more than `MAX_FRAME_PIXELS` pixels.
+    VideoFrameTooLarge,
     /// Video stride, dimensions, or computed buffer size was invalid/overflowed.
     InvalidVideoLayout,
     /// Video data did not contain all bytes required by its stride and height.
@@ -397,6 +437,12 @@ mod tests {
         if meta.width == 0 || meta.height == 0 {
             return Err(CaptureError::InvalidVideoDimensions);
         }
+        if meta.width > 7680
+            || meta.height > 7680
+            || u128::from(meta.width) * u128::from(meta.height) > 7680 * 4320
+        {
+            return Err(CaptureError::VideoFrameTooLarge);
+        }
         let bytes_per_pixel: u128 = match meta.pixel_format {
             PixelFormat::Bgra8 | PixelFormat::Rgba8 => 4,
         };
@@ -439,28 +485,98 @@ mod tests {
     }
 
     #[test]
-    fn video_frame_rejects_width_whose_minimum_stride_overflows_u32() {
-        // 4 * (u32::MAX / 4 + 1) overflows u32.
+    fn video_frame_rejects_dimensions_whose_minimum_stride_would_overflow_u32() {
+        // 4 * (u32::MAX / 4 + 1) would overflow u32; the size limit rejects it
+        // before any stride arithmetic.
         let width = u32::MAX / 4 + 1;
         assert_eq!(
             VideoFrame::new(metadata(width, 1, u32::MAX), Vec::new()),
-            Err(CaptureError::InvalidVideoLayout)
+            Err(CaptureError::VideoFrameTooLarge)
         );
         assert_eq!(
             VideoFrame::new(metadata(u32::MAX, u32::MAX, u32::MAX), Vec::new()),
-            Err(CaptureError::InvalidVideoLayout)
+            Err(CaptureError::VideoFrameTooLarge)
         );
     }
 
     #[test]
-    fn video_frame_rejects_oversized_dimensions_without_allocating() {
-        // Largest representable layout: the required length is either not
-        // addressable (32-bit) or far larger than the empty buffer (64-bit).
-        let result = VideoFrame::new(metadata(u32::MAX / 4, u32::MAX, u32::MAX), Vec::new());
+    fn video_frame_rejects_largest_stride_at_the_size_limit_without_allocating() {
+        // Largest stride and height at the limit: the required length is either
+        // not addressable (32-bit) or far larger than the empty buffer (64-bit).
+        let result = VideoFrame::new(
+            metadata(MAX_FRAME_HEIGHT, MAX_FRAME_WIDTH, u32::MAX),
+            Vec::new(),
+        );
         #[cfg(target_pointer_width = "64")]
         assert_eq!(result, Err(CaptureError::VideoBufferTooShort));
         #[cfg(not(target_pointer_width = "64"))]
         assert_eq!(result, Err(CaptureError::InvalidVideoLayout));
+    }
+
+    #[test]
+    fn frame_size_limit_constants_are_8k() {
+        assert_eq!((MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT), (7680, 4320));
+        assert_eq!(MAX_FRAME_PIXELS, 33_177_600);
+    }
+
+    #[test]
+    fn landscape_8k_frame_at_the_limit_is_accepted() {
+        let stride = MAX_FRAME_WIDTH * 4;
+        let len = usize::try_from(u64::from(stride) * u64::from(MAX_FRAME_HEIGHT)).unwrap_or(0);
+        let meta = metadata(MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT, stride);
+        assert_eq!(constructor_result(&meta, len), Ok(()));
+    }
+
+    #[test]
+    fn portrait_8k_frame_at_the_limit_is_accepted() {
+        let stride = MAX_FRAME_HEIGHT * 4;
+        let len = usize::try_from(u64::from(stride) * u64::from(MAX_FRAME_WIDTH)).unwrap_or(0);
+        let meta = metadata(MAX_FRAME_HEIGHT, MAX_FRAME_WIDTH, stride);
+        assert_eq!(constructor_result(&meta, len), Ok(()));
+    }
+
+    #[test]
+    fn frame_one_pixel_beyond_the_limit_is_rejected_before_layout_checks() {
+        // Empty buffers and a zero stride: the size error must win, proving the
+        // limit is checked before stride and length arithmetic.
+        for (width, height) in [
+            (MAX_FRAME_WIDTH + 1, 1),
+            (1, MAX_FRAME_WIDTH + 1),
+            (MAX_FRAME_WIDTH, MAX_FRAME_HEIGHT + 1),
+            (MAX_FRAME_HEIGHT + 1, MAX_FRAME_WIDTH),
+            (MAX_FRAME_WIDTH + 1, MAX_FRAME_HEIGHT),
+            (MAX_FRAME_WIDTH, MAX_FRAME_WIDTH),
+        ] {
+            assert_eq!(
+                VideoFrame::new(metadata(width, height, 0), Vec::new()),
+                Err(CaptureError::VideoFrameTooLarge),
+                "{width}x{height}"
+            );
+        }
+    }
+
+    #[test]
+    fn dimension_validation_accepts_the_limit_and_rejects_one_beyond() {
+        assert_eq!(validate_frame_dimensions(7680, 4320), Ok(()));
+        assert_eq!(validate_frame_dimensions(4320, 7680), Ok(()));
+        assert_eq!(validate_frame_dimensions(7680, 1), Ok(()));
+        assert_eq!(validate_frame_dimensions(1, 7680), Ok(()));
+        assert_eq!(
+            validate_frame_dimensions(7681, 1),
+            Err(CaptureError::VideoFrameTooLarge)
+        );
+        assert_eq!(
+            validate_frame_dimensions(7680, 4321),
+            Err(CaptureError::VideoFrameTooLarge)
+        );
+        assert_eq!(
+            validate_frame_dimensions(4321, 7680),
+            Err(CaptureError::VideoFrameTooLarge)
+        );
+        assert_eq!(
+            validate_frame_dimensions(0, 7681),
+            Err(CaptureError::InvalidVideoDimensions)
+        );
     }
 
     #[test]
@@ -520,12 +636,16 @@ mod tests {
         }
 
         fn pick_u32(&mut self) -> u32 {
-            const EDGES: [u32; 10] = [
+            const EDGES: [u32; 14] = [
                 0,
                 1,
                 2,
                 3,
                 4,
+                4320,
+                4321,
+                7680,
+                7681,
                 u32::MAX / 4,
                 u32::MAX / 4 + 1,
                 u32::MAX - 1,
@@ -535,7 +655,7 @@ mod tests {
             let value = self.next();
             let low = u32::try_from(value & 0xFFFF_FFFF).unwrap_or(0);
             match value >> 60 {
-                0..=5 => EDGES[usize::try_from(value % 10).unwrap_or(0)],
+                0..=5 => EDGES[usize::try_from(value % 14).unwrap_or(0)],
                 6..=10 => low % 64,
                 _ => low,
             }

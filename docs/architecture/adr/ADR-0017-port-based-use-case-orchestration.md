@@ -1,7 +1,7 @@
 # ADR-0017: Orchestrate recording use cases through the granular ports
 
 - **Date:** 27 November 2026
-- **Status:** Accepted
+- **Status:** Accepted; decision 5 (call order) amended by ADR-0020 and ADR-0021 (both accepted 28 November 2026)
 - **Supersedes:** decision 10 of ADR-0012 (the `RecordingResources` compatibility facade)
 - **Related:** ADR-0002, ADR-0010, ADR-0011, ADR-0012, ADR-0014, ADR-0018
 

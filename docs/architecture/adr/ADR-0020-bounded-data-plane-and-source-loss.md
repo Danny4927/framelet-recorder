@@ -1,8 +1,8 @@
 # ADR-0020: Core-owned bounded data plane, overload policy, and source loss
 
 - **Date:** 27 November 2026
-- **Status:** Proposed — implemented for review; a human maintainer must accept it before roadmap criterion A-7 can be ticked
-- **Amends (on acceptance):** ADR-0012 decision 3 (media pipeline accepts payloads through its port); ADR-0017 decision 5 (call order) as listed below. The accepted text of both ADRs is not edited.
+- **Status:** Accepted — 28 November 2026, decided by the maintainer (including the source-loss review point, see Alternatives)
+- **Amends:** ADR-0012 decision 3 (media pipeline accepts payloads through its port); ADR-0017 decision 5 (call order) as listed below. The accepted text of both ADRs is not edited.
 - **Related:** ADR-0005, ADR-0009, ADR-0012, ADR-0017, ADR-0018, ADR-0021; roadmap Phase A deliverable A3
 
 ## Context
@@ -22,7 +22,7 @@ ADR-0017 gave the application service a typed control plane but left the data pl
 5. **Stream end and source loss.** Dropping a sink ends its stream with `StreamEnd::Stopped`; the consumer sees `Received::Ended(Stopped)` once the queue is empty. A capture adapter that loses its device calls `sink.report_source_lost()`, which consumes the sink (nothing can be sent after the loss) and ends the stream with `StreamEnd::SourceLost`. Capture `stop` stops the producer and releases the sink before returning, and is idempotent; a failed `start` releases the sink too. Dropping a stream (media `abort`/`close`) makes later sends return `Closed` and frees queued payloads.
 6. **Source-loss outcome is a domain rule.** `RecordingConfiguration::source_loss_outcome(kind)` returns `StopRecording` for a source the mode itself records (screen; camera; microphone in microphone-only mode) and `ContinueWithout` for the optional microphone. The aggregate records the loss (`RecordingSession::record_source_loss`, `lost_sources()`) while Recording, Paused, or Finalizing, so a completed session with lost sources is visibly degraded.
 7. **Source-loss path in the application.** The application keeps a `StreamMonitor` for every sink it hands out. A new inbound use case `RecordingUseCases::process_source_losses(recording_id)` — called periodically by the inbound adapter's recording worker (Phase C fixes the cadence; target ≤ 100 ms) — finds lost sources, stops their capture, publishes `RecordingEvent::SourceLost { recording_id, kind, source }` and then applies the outcome: continue (returns the state; a failed stop of the lost source is `CleanupIncomplete`), or stop the remaining sources, drain and close the pipeline so the kept candidate is as recoverable as possible, publish nothing, fail the session with `ApplicationError::SourceLost { kind, additional_failures }`. `stop` checks the monitors again after all producers have stopped, so a loss that happens just before Stop still prevents publication. A monitor is a flag, not a queue: loss signals cannot overflow or be lost. Every lost source found in one check is processed; a loss the aggregate rejects (an invariant violation) does not hide the others and stays tracked for the next check, and the rejection is returned as a typed domain error.
-8. **Call order changes (amends ADR-0017 decision 5 on acceptance).** prepare: `storage.begin` → `media.prepare(…, &target)` → sink check → Ready. start: `media.start` → captures with their sinks (rollback: stop started sources, `media.abort`, `storage.abort`). stop: stop all captures → record losses → `media.drain` → `media.close` → `storage.publish(session, ClosedOutput)` (ADR-0021). cancel: `media.abort` → `storage.abort`. `stop` on an ended session (Completed, Failed, Cancelled) returns that state and touches no port (REQ-LIFE-11).
+8. **Call order changes (amends ADR-0017 decision 5).** prepare: `storage.begin` → `media.prepare(…, &target)` → sink check → Ready. start: `media.start` → captures with their sinks (rollback: stop started sources, `media.abort`, `storage.abort`). stop: stop all captures → record losses → `media.drain` → `media.close` → `storage.publish(session, ClosedOutput)` (ADR-0021). cancel: `media.abort` → `storage.abort`. `stop` on an ended session (Completed, Failed, Cancelled) returns that state and touches no port (REQ-LIFE-11).
 
 ## Alternatives
 
@@ -32,14 +32,14 @@ ADR-0017 gave the application service a typed control plane but left the data pl
 - **Drop-newest for video** (as in the GStreamer PoC): rejected for the production contract; it keeps stale frames and increases latency under overload. The PoC remains a diagnostic.
 - **Drop-oldest for audio:** rejected; it silently discards audio that was already accepted (ADR-0009).
 - **Push-based source-loss notification** (a callback port implemented by the composition root, or a channel the service drains): rejected for now; it needs an extra port or a second receive path on the worker. A monitor flag plus a polled use case is lossless and needs no new port. Revisit if Phase C measurements show polling latency matters.
-- **Stop on every source loss:** considered — simplest and never produces a degraded artifact. Rejected because SPECIFICATION.md §9 allows continuing when the active mode stays valid. *Review point for acceptance:* continuing without the optional microphone completes a recording whose later part has no audio; the loss is published as an event and recorded on the aggregate, but the `Completed` event does not yet carry it (see Consequences).
+- **Stop on every source loss:** considered — simplest and never produces a degraded artifact. Rejected because SPECIFICATION.md §9 allows continuing when the active mode stays valid. *Review point — closed 28 November 2026:* the maintainer decided that losing the optional microphone continues the recording without audio, as implemented (decision 6). The later part of such a recording has no audio; the loss is published as an event and recorded on the aggregate, but the `Completed` event does not yet carry it (see Consequences; Phase C, C-3).
 
 ## Consequences
 
 - No capture adapter can deliver a payload except through a bounded, core-owned sink; queue bounds and overload accounting are a property of the core, verified once.
 - `MediaPipelinePort` loses `push_video`/`push_audio` and gains `abort`; `close` now returns `ClosedOutput`. Capture `start` takes a sink. Every adapter written after this ADR uses these signatures.
 - `try_send` takes a lock; it is fine for capture workers but not callbacks. A lock-free design would require reviewed third-party code or `unsafe` and is not justified without measurements.
-- Memory is bounded per stream by capacity × frame size; `VideoFrame` itself has no configured maximum dimension yet (REQ-CAP-05, Phases C/E).
+- Memory is bounded per stream by capacity × frame size; `VideoFrame::new` rejects frames above the 8K limit decided on 28 November 2026 (`MAX_FRAME_WIDTH`/`MAX_FRAME_HEIGHT`, [capture contract](../capture-and-media-contracts.md), REQ-CAP-05).
 - Overload is counted and marked but not yet surfaced to the user: wiring `StreamStats` into `RecordingMetricsPort`, a degraded flag on `Completed`, and the UI message are Phase C work (C-3, REQ-FLOW-02/03, REQ-ERR-06).
 - Format changes inside a stream (sample rate, channels, pixel format) are not checked by the sink; the media adapter validates them (ADR-0009 queue rules still apply).
 

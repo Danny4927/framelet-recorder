@@ -1,6 +1,6 @@
 # Capture and media contracts
 
-**Status:** Architecture contract. The capture-to-media data plane (§4.2) and the storage/media hand-off (§7.1) are implemented in `framelet-core` per ADR-0020 and ADR-0021 (both Proposed, awaiting acceptance); queue capacities and formats remain measurable implementation decisions.
+**Status:** Architecture contract. The capture-to-media data plane (§4.2) and the storage/media hand-off (§7.1) are implemented in `framelet-core` per ADR-0020 and ADR-0021 (both accepted 28 November 2026); queue capacities and formats remain measurable implementation decisions.
 
 This document makes the architecture's media boundary concrete without binding it to a capture library.
 
@@ -29,7 +29,7 @@ Required metadata: non-zero width/height; pixel format; one or more planes, each
 Initial PoC formats should be limited to BGRA8 or RGBA8 packed frames unless the backend naturally exposes another format without expensive conversion. Multi-plane formats (NV12/I420) require explicit per-plane offsets/strides and validation before adoption.
 
 Validation:
-1. Reject zero dimensions and dimensions above a configured maximum before allocation.
+1. Reject zero dimensions and dimensions above the configured maximum before allocation. The maximum is 8K (decided 28 November 2026, SPECIFICATION.md REQ-CAP-06): `MAX_FRAME_WIDTH` = 7680 and `MAX_FRAME_HEIGHT` = 4320 in `framelet-capture-api`. **Interpretation:** the limit is orientation-independent — each of width and height must be ≤ 7680, *and* width × height must be ≤ 7680 × 4320 (`MAX_FRAME_PIXELS` = 33,177,600). A portrait monitor's 4320 × 7680 frame is therefore accepted; 7680 × 7680, 7681 × 1 and 7680 × 4321 are rejected. Larger frames yield `CaptureError::VideoFrameTooLarge` (zero dimensions keep `InvalidVideoDimensions`). `VideoFrame::new` checks this before any stride or length arithmetic; adapter conversion functions must call `validate_frame_dimensions(width, height)` before allocating the frame buffer (Phase E).
 2. Check row stride against minimum bytes per row.
 3. Use checked multiplication/addition for plane sizes and offsets.
 4. Verify each plane contains all addressed bytes; reject truncation.

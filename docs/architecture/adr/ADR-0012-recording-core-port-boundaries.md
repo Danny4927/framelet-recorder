@@ -1,7 +1,7 @@
 # ADR-0012: Define granular Recording bounded-context ports
 
 - **Date:** 17 November 2026
-- **Status:** Accepted; decision 10 superseded by ADR-0017
+- **Status:** Accepted; decision 10 superseded by ADR-0017; decision 3 amended by ADR-0020 and decision 4 amended by ADR-0021 (both accepted 28 November 2026)
 - **Related:** ADR-0001, ADR-0002, ADR-0005, ADR-0009, ADR-0010, ADR-0011
 
 ## Context

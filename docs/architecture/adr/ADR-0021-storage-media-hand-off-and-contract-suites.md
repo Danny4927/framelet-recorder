@@ -1,8 +1,8 @@
 # ADR-0021: Storage-to-media hand-off through the core, and shared port contract suites
 
 - **Date:** 27 November 2026
-- **Status:** Proposed — implemented for review; a human maintainer must accept it before roadmap criterion A-7 can be ticked
-- **Amends (on acceptance):** ADR-0012 decision 4 (storage publishes after the media writer closed — now enforced by contract plus target check); ADR-0014 "the media adapter obtains the temporary path" and its `abort` semantics; ADR-0017 decision 5 (prepare passes the output target; stop publishes a `ClosedOutput`; cancel/rollback use `media.abort`). The accepted text of those ADRs is not edited.
+- **Status:** Accepted — 28 November 2026, decided by the maintainer
+- **Amends:** ADR-0012 decision 4 (storage publishes after the media writer closed — now enforced by contract plus target check); ADR-0014 "the media adapter obtains the temporary path" and its `abort` semantics; ADR-0017 decision 5 (prepare passes the output target; stop publishes a `ClosedOutput`; cancel/rollback use `media.abort`). The accepted text of those ADRs is not edited.
 - **Related:** ADR-0012, ADR-0014, ADR-0017, ADR-0020; roadmap Phase A deliverables A4 and A5
 
 ## Context
